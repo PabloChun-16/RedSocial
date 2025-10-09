@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mi Red Social · Auth</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+
+<body class="auth theme-night" style="--bg-image: url('/media/fondo2.jpg');">
+  <!-- Fondo en video -->
+  <video id="bgVideo"
+         class="auth-bg auth-video"
+         autoplay muted loop playsinline preload="auto"
+         poster="/media/fondo2.jpg"
+         data-night="/media/video/paisajes-7.mp4"
+         data-day="/media/video/fondo3.mp4">
+    <source src="/media/video/paisajes-7.mp4" type="video/mp4" />
+    Tu navegador no soporta video en HTML5.
+  </video>
+  <div class="video-fader" aria-hidden="true"></div>
+
+  <main class="auth-shell">
+    <section class="glass-card" role="dialog" aria-label="Acceso">
+      <div class="card-grid">
+        <aside class="card-hero" aria-hidden="true">
+          <div id="hero-media" class="hero-media" role="presentation">
+            <div class="hero-copy">
+              <span class="hero-kicker">Imagina, conecta, comparte</span>
+              <h2 class="hero-title">Una red social<br />para imaginar.</h2>
+              <p class="hero-text">
+                Descubre espacios creativos y comparte historias increíbles con tu comunidad.
+              </p>
+              <div class="hero-social">
+                <a class="social-btn facebook" href="#" role="button">
+                  <span aria-hidden="true">f</span> Facebook
+                </a>
+                <a class="social-btn twitter" href="#" role="button">
+                  <span aria-hidden="true">t</span> Twitter
+                </a>
+              </div>
+            </div>
+          </div>
+          <div id="hero-indicators" class="hero-indicators" aria-hidden="true"></div>
+        </aside>
+
+        <div class="auth-content" id="auth-content">
+          <!-- Encabezado -->
+          <div class="brand">
+            <div class="brand-top"></div>
+            <div class="brand-logo">LuminA</div>
+            <div class="brand-sub">Social Network</div>
+          </div>
+
+          <div class="auth-controls">
+            <!-- Toggle Día/Noche -->
+            <div class="auth-controls__row auth-controls__row--toolbar">
+              <div class="toolbar">
+                <button id="theme-toggle" type="button" class="toggle-theme" aria-pressed="false" title="Cambiar tema">
+                  <span class="icon-sun" aria-hidden="true">☀️</span>
+                  <span class="icon-moon" aria-hidden="true">🌙</span>
+                  <span class="label">Día/Noche</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="auth-controls__row auth-controls__row--tabs">
+              <div class="tabs">
+                <button id="tab-login" class="tab active" type="button">Iniciar sesión</button>
+                <button id="tab-register" class="tab" type="button">Crear cuenta</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Login -->
+          <form id="form-login" class="panel active" autocomplete="on" aria-hidden="false">
+            <div class="input-row">
+              <span class="icon user" aria-hidden="true"></span>
+              <input id="login-email" name="email" type="email" required placeholder="Ingresa tu email" />
+            </div>
+
+            <div class="input-row">
+              <span class="icon lock" aria-hidden="true"></span>
+              <input id="login-password" name="password" type="password" required placeholder="Ingresa tu contraseña" />
+              <button class="peek" type="button" aria-label="Mostrar u ocultar contraseña">👁️</button>
+            </div>
+
+            <div class="row-between">
+              <label class="check">
+                <input type="checkbox" id="remember" /> <span>Recordarme</span>
+              </label>
+              <a class="link-muted" href="#" tabindex="0">¿Olvidaste tu contraseña?</a>
+            </div>
+
+            <button class="btn-primary" type="submit"> · Entrar · </button>
+          </form>
+
+          <!-- Registro -->
+          <form id="form-register" class="panel" autocomplete="off" aria-hidden="true">
+            <div class="grid-2 register-grid">
+              <div class="field">
+                <label for="reg-name">Nombre</label>
+                <input id="reg-name" name="name" type="text" required placeholder="Tu nombre" />
+              </div>
+              <div class="field">
+                <label for="reg-nick">Nick</label>
+                <input id="reg-nick" name="nick" type="text" required placeholder="Tu alias" />
+              </div>
+              <div class="field">
+                <label for="reg-email">Email</label>
+                <input id="reg-email" name="email" type="email" required placeholder="tu@email.com" />
+              </div>
+              <div class="field">
+                <label for="reg-password">Contraseña</label>
+                <input id="reg-password" name="password" type="password" required placeholder="Mín. 6 caracteres" />
+              </div>
+            </div>
+
+            <button class="btn-primary" type="submit">Crear cuenta</button>
+          </form>
+
+          <div id="msg" class="msg" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Botón decorativo -->
+    <button class="fab" type="button" title="Refrescar fondo">⟳</button>
+  </main>
+
+  <script src="/js/auth.js" defer></script>
+</body>
+</html>

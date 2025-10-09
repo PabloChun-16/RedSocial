@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mi Red Social · Feed</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Great+Vibes&display=swap"/>
+  <link rel="stylesheet" href="/css/feed.css" />
+  <link rel="stylesheet" href="/css/post-composer.css" />
+</head>
+
+<body class="feed theme-day">
+  <div class="feed-bg"></div>
+
+  <aside class="feed-sidebar glass">
+    <div class="sidebar-brand">
+      <span class="sidebar-logo">LuminA</span>
+      <span class="sidebar-sub">Moments</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link is-active" href="/feed.html">
+        <span class="icon icon-home" aria-hidden="true"></span>
+        <span>Inicio</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-search" aria-hidden="true"></span>
+        <span>Buscar</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-explore" aria-hidden="true"></span>
+        <span>Explorar</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-reels" aria-hidden="true"></span>
+        <span>Reels</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-chat" aria-hidden="true"></span>
+        <span>Mensajes</span>
+        <span class="badge">2</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-bell" aria-hidden="true"></span>
+        <span>Notificaciones</span>
+      </a>
+      <a class="sidebar-link" href="#">
+        <span class="icon icon-plus" aria-hidden="true"></span>
+        <span>Crear</span>
+      </a>
+      <a class="sidebar-link" href="/profile.html">
+        <span class="avatar-ring">
+          <img data-fallback="avatar" id="sidebar-avatar" src="/media/iconobase.png" alt="Perfil" />
+        </span>
+        <span>Perfil</span>
+      </a>
+      <button id="logout-btn" class="sidebar-link logout" type="button">
+        <span class="icon icon-logout" aria-hidden="true"></span>
+        <span>Cerrar sesión</span>
+      </button>
+    </nav>
+  </aside>
+
+  <div class="feed-main">
+    <header class="feed-header glass">
+      <div class="brand">
+        <div class="brand-mark">LuminA</div>
+        <span class="brand-sub">Moments</span>
+      </div>
+
+      <label class="search">
+        <input type="search" placeholder="Busca usuarios, lugares o momentos" />
+        <span class="icon-search" aria-hidden="true"></span>
+      </label>
+
+    <nav class="top-actions">
+      <button id="feed-theme-toggle" class="toggle-theme" type="button">
+        <span class="icon-sun">☀️</span>
+        <span class="icon-moon">🌙</span>
+        <span class="label">Modo</span>
+      </button>
+        <div class="profile-block">
+          <a class="profile-chip" id="profile-chip" href="/profile.html">
+            <img id="profile-avatar" data-fallback="avatar" src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80" alt="Perfil" />
+            <div class="chip-meta">
+              <div class="chip-name-row">
+                <span id="profile-name">Invitad@</span>
+                <span class="chip-name-icon" aria-hidden="true">
+                  <span class="icon icon-user"></span>
+                </span>
+              </div>
+              <span id="profile-tagline">Momentos de @guest</span>
+            </div>
+          </a>
+        </div>
+      </nav>
+    </header>
+
+    <section class="stories-panel glass">
+      <header class="stories-panel__head">
+        <div>
+          <h2>Historias</h2>
+          <p class="stories-sub">Descubre los destellos de tu comunidad</p>
+        </div>
+        <button class="stories__add" type="button">+</button>
+      </header>
+      <div class="stories-rail">
+        <article class="story active is-self" id="story-self">
+          <div class="story-ring">
+            <img id="story-avatar" data-fallback="avatar" src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=facearea&w=200&q=80" alt="Tu historia" />
+          </div>
+          <span class="story-name" id="story-name">Tú</span>
+          <span class="story-hint">Añadir</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1500522144261-ea64433bbe27?auto=format&fit=facearea&w=200&q=80" alt="Historia Nico" />
+          </div>
+          <span class="story-name">Nico</span>
+          <span class="story-hint">Hace 4 h</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1472457897821-70d3819a0e24?auto=format&fit=facearea&w=200&q=80" alt="Historia Ana" />
+          </div>
+          <span class="story-name">Ana</span>
+          <span class="story-hint">Hace 1 h</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=facearea&w=200&q=80" alt="Historia Jorge" />
+          </div>
+          <span class="story-name">Jorge</span>
+          <span class="story-hint">Hace 6 h</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=facearea&w=200&q=80" alt="Historia Vale" />
+          </div>
+          <span class="story-name">Vale</span>
+          <span class="story-hint">Hace 3 h</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=facearea&w=200&q=80" alt="Historia Isa" />
+          </div>
+          <span class="story-name">Isa</span>
+          <span class="story-hint">Hace 5 h</span>
+        </article>
+        <article class="story">
+          <div class="story-ring">
+            <img src="https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=facearea&w=200&q=80" alt="Historia Rulo" />
+          </div>
+          <span class="story-name">Rulo</span>
+          <span class="story-hint">Hace 8 h</span>
+        </article>
+      </div>
+    </section>
+
+    <main class="feed-shell">
+      <section class="feed-grid" id="feed-grid"></section>
+      <div class="feed-empty" id="feed-empty" hidden>
+        <div class="feed-empty__art">🌌</div>
+        <h3>No hay publicaciones nuevas aún</h3>
+        <p>Explora a otros creadores para descubrir momentos inspiradores.</p>
+      </div>
+    </main>
+  </div>
+
+  <button class="fab js-open-composer" type="button" title="Crear publicación">+</button>
+
+  <script src="/js/post-composer.js" defer></script>
+  <script src="/js/feed.js" defer></script>
+</body>
+</html>

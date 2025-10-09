@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mi Red Social · Perfil</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Great+Vibes&display=swap" />
+  <link rel="stylesheet" href="/css/profile.css" />
+  <link rel="stylesheet" href="/css/post-composer.css" />
+</head>
+<body class="profile-view theme-day">
+  <div class="profile-bg"></div>
+
+  <header class="profile-top glass">
+    <div class="brand">
+      <div class="brand-mark">LuminA</div>
+      <span class="brand-sub">Moments</span>
+    </div>
+
+    <label class="profile-search">
+      <input type="search" id="profile-search-input" placeholder="Busca momentos, creadores o etiquetas" />
+      <span class="icon icon-search" aria-hidden="true"></span>
+    </label>
+
+    <nav class="profile-top__actions">
+      <button id="profile-theme-toggle" class="toggle-theme" type="button">
+        <span class="icon-sun">☀️</span>
+        <span class="icon-moon">🌙</span>
+        <span class="label">Modo</span>
+      </button>
+      <a class="profile-chip" id="profile-chip" href="/profile-edit.html">
+        <img id="profile-chip-avatar" data-fallback="avatar" src="/media/iconobase.png" alt="Tu avatar" />
+        <div class="chip-meta">
+          <span id="profile-chip-name">Invitad@</span>
+          <span id="profile-chip-nick">@guest</span>
+        </div>
+      </a>
+    </nav>
+  </header>
+
+  <main class="profile-shell">
+    <section class="profile-hero glass">
+      <div class="hero-avatar">
+        <img id="profile-hero-avatar" data-fallback="avatar" src="/media/iconobase.png" alt="Avatar principal" />
+        <button class="btn-ghost" id="hero-edit-btn" type="button">Editar perfil</button>
+      </div>
+      <div class="hero-details">
+        <div class="hero-header">
+          <h1 id="profile-username">@username</h1>
+          <span class="hero-name" id="profile-fullname">Nombre Apellido</span>
+        </div>
+        <ul class="hero-stats">
+          <li>
+            <strong id="profile-posts-count">0</strong>
+            <span>Publicaciones</span>
+          </li>
+          <li>
+            <strong id="profile-followers-count">0</strong>
+            <span>Seguidores</span>
+          </li>
+          <li>
+            <strong id="profile-following-count">0</strong>
+            <span>Siguiendo</span>
+          </li>
+        </ul>
+        <p class="hero-bio" id="profile-bio">
+          Personaliza tu historia: comparte momentos, colecciona recuerdos y mantente cerca de tu círculo creativo.
+        </p>
+        <div class="hero-meta">
+          <span class="hero-tagline" id="profile-tagline">Momentos de @username</span>
+          <span class="hero-role" id="profile-role">Miembro desde hoy</span>
+        </div>
+        <div class="hero-cta">
+          <button class="btn-primary js-open-composer" id="new-post-btn" type="button">Crear contenido</button>
+          <a class="btn-secondary" href="/profile-edit.html">Editar información</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="profile-highlights glass">
+      <header class="section-head">
+        <div>
+          <h2>Destacados</h2>
+          <p>Comparte tus compilaciones favoritas o historias fijadas.</p>
+        </div>
+        <button class="btn-soft" type="button">Nuevo destacado</button>
+      </header>
+      <div class="highlight-rail" id="highlight-rail"></div>
+    </section>
+
+    <section class="profile-tabs glass">
+      <nav class="tabs" role="tablist">
+        <button class="tab is-active" data-tab="posts" type="button">Publicaciones</button>
+        <button class="tab" data-tab="saved" type="button">Guardados</button>
+        <button class="tab" data-tab="tagged" type="button">Etiquetas</button>
+      </nav>
+      <div class="tab-extra">
+        <button class="btn-soft" type="button">
+          <span class="icon icon-grid" aria-hidden="true"></span> Gestionar
+        </button>
+      </div>
+    </section>
+
+    <section class="profile-gallery glass">
+      <header class="profile-gallery__head">
+        <h2 id="gallery-title">Publicaciones</h2>
+        <div class="gallery-actions">
+          <button class="btn-soft" type="button">Analíticas</button>
+          <button class="btn-soft" type="button">Programar</button>
+        </div>
+      </header>
+      <div class="profile-grid" id="profile-grid"></div>
+      <div class="profile-empty" id="profile-empty" hidden>
+        <div class="empty-illustration" aria-hidden="true">🌌</div>
+        <h3>Aún no hay nada por aquí</h3>
+        <p>Comparte tu primer momento y muestra a tu comunidad lo que te inspira.</p>
+        <button class="btn-primary" type="button">Subir contenido</button>
+      </div>
+    </section>
+  </main>
+
+  <button class="fab" type="button" title="Volver al feed" onclick="location.href='/feed.html'">⌂</button>
+
+  <script src="/js/post-composer.js" defer></script>
+  <script src="/js/profile.js" defer></script>
+</body>
+</html>
