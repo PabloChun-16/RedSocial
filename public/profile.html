@@ -14,10 +14,10 @@
   <div class="profile-bg"></div>
 
   <header class="profile-top glass">
-    <div class="brand">
+    <a class="brand brand-link" href="/feed.html">
       <div class="brand-mark">LuminA</div>
       <span class="brand-sub">Moments</span>
-    </div>
+    </a>
 
     <label class="profile-search">
       <input type="search" id="profile-search-input" placeholder="Busca momentos, creadores o etiquetas" />
@@ -74,7 +74,7 @@
         </div>
         <div class="hero-cta">
           <button class="btn-primary js-open-composer" id="new-post-btn" type="button">Crear contenido</button>
-          <a class="btn-secondary" href="/profile-edit.html">Editar información</a>
+          <button class="btn-secondary" id="edit-mural-btn" type="button">Editar mural</button>
         </div>
       </div>
     </section>
@@ -116,7 +116,7 @@
         <div class="empty-illustration" aria-hidden="true">🌌</div>
         <h3>Aún no hay nada por aquí</h3>
         <p>Comparte tu primer momento y muestra a tu comunidad lo que te inspira.</p>
-        <button class="btn-primary" type="button">Subir contenido</button>
+        <button class="btn-primary js-open-composer" type="button">Subir contenido</button>
       </div>
     </section>
   </main>

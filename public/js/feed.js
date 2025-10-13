@@ -38,6 +38,49 @@ const FEED_STATE = {
   posts: []
 };
 
+const normalizeAssetPath = (value, fallbackFolder = "") => {
+  if(!value) return "";
+  const trimmed = value.trim();
+  if(!trimmed) return "";
+  if(trimmed.toLowerCase() === "default.png" || trimmed.includes("iconobase")){
+    return "/media/iconobase.png";
+  }
+  if(/^https?:\/\//i.test(trimmed)) return trimmed;
+  const marker = "uploads/";
+  const lower = trimmed.toLowerCase();
+  const index = lower.lastIndexOf(marker);
+  if(index !== -1){
+    const relative = trimmed.slice(index + marker.length).replace(/^[\\/]+/, "");
+    return `/uploads/${relative}`;
+  }
+  const file = trimmed.split(/[\\/]/).pop();
+  if(file){
+    if(fallbackFolder){
+      return `/uploads/${fallbackFolder}/${file}`;
+    }
+    return `/uploads/${file}`;
+  }
+  return "";
+};
+
+const sanitizePublicationForClient = (publication = {}) => {
+  const normalizedImage = normalizeAssetPath(publication.image || "", "posts");
+  const owner = publication.owner
+    ? {
+        ...publication.owner,
+        image: normalizeAssetPath(publication.owner.image || "", "avatars") || AVATAR_DEFAULT
+      }
+    : null;
+  return {
+    ...publication,
+    image: normalizedImage || "/media/iconobase.png",
+    owner,
+    likes: publication.likes ?? 0,
+    tags: Array.isArray(publication.tags) ? publication.tags : [],
+    adjustments: { ...DEFAULT_ADJUSTMENTS, ...(publication.adjustments || {}) }
+  };
+};
+
 function attachAvatarFallback(img){
   if(!img) return;
   const fallback = img.dataset.fallback;
@@ -100,17 +143,7 @@ async function refreshUserFromApi(){
   return null;
 }
 
-function normalizeAvatar(value){
-  if(!value) return null;
-  const trimmed = value.trim();
-  if(!trimmed) return null;
-  if(trimmed === "default.png") return AVATAR_DEFAULT;
-  if(/^https?:\/\//i.test(trimmed)) return trimmed;
-  if(trimmed.startsWith("/")) return trimmed;
-  if(trimmed.startsWith("./")) return normalizeAvatar(trimmed.slice(2));
-  if(trimmed.startsWith("media/") || trimmed.startsWith("uploads/")) return `/${trimmed}`;
-  return `/media/${trimmed}`;
-}
+
 
 function hydrateUserUI(user){
   if(!user) return;
@@ -121,35 +154,22 @@ function hydrateUserUI(user){
   if(storyName){
     storyName.textContent = user.name?.split(" ")[0] || nick;
   }
-  const rawAvatar = user.avatar || user.image || user.photo;
-  const avatarUrl = normalizeAvatar(rawAvatar);
+  const avatarUrl = normalizeAssetPath(user.avatar || user.image || user.photo, "avatars");
   if(profileAvatar){
-    if(avatarUrl){
-      profileAvatar.src = avatarUrl;
-      profileAvatar.alt = user.name || nick;
-      profileAvatar.classList.remove("is-fallback");
-    }else{
-      profileAvatar.src = AVATAR_FALLBACK;
-      profileAvatar.classList.add("is-fallback");
-    }
+    const finalSrc = avatarUrl || AVATAR_DEFAULT;
+    profileAvatar.src = finalSrc;
+    profileAvatar.alt = user.name || nick;
+    profileAvatar.classList.toggle("is-fallback", finalSrc === AVATAR_DEFAULT);
   }
   if(storyAvatar){
-    if(avatarUrl){
-      storyAvatar.src = avatarUrl;
-      storyAvatar.classList.remove("is-fallback");
-    }else{
-      storyAvatar.src = AVATAR_FALLBACK;
-      storyAvatar.classList.add("is-fallback");
-    }
+    const finalSrc = avatarUrl || AVATAR_FALLBACK;
+    storyAvatar.src = finalSrc;
+    storyAvatar.classList.toggle("is-fallback", finalSrc === AVATAR_FALLBACK);
   }
   if(sidebarAvatar){
-    if(avatarUrl){
-      sidebarAvatar.src = avatarUrl;
-      sidebarAvatar.classList.remove("is-fallback");
-    }else{
-      sidebarAvatar.src = AVATAR_DEFAULT;
-      sidebarAvatar.classList.add("is-fallback");
-    }
+    const finalSrc = avatarUrl || AVATAR_DEFAULT;
+    sidebarAvatar.src = finalSrc;
+    sidebarAvatar.classList.toggle("is-fallback", finalSrc === AVATAR_DEFAULT);
   }
 }
 
@@ -176,40 +196,46 @@ function renderFeed(){
   if(!FEED_STATE.posts.length){
     feedGrid.hidden = true;
     feedEmpty.hidden = false;
+    feedEmpty.style.display = "";
     return;
   }
   feedGrid.hidden = false;
   feedEmpty.hidden = true;
+  feedEmpty.style.display = "none";
 
   FEED_STATE.posts.forEach((post, index) => {
+    const normalized = sanitizePublicationForClient(post);
+    const ownerImage = normalizeAssetPath(normalized.owner?.image || AVATAR_DEFAULT, "avatars") || AVATAR_DEFAULT;
+    const ownerName = normalized.owner?.name?.split?.(" ")?.[0] || normalized.owner?.nick || "Usuario";
+    const ownerNick = normalized.owner?.nick ? `@${normalized.owner.nick}` : "";
     const card = document.createElement("article");
     card.className = `post glass swing${index % 3 ? ` delay-${index % 3}` : ""}`;
-    card.dataset.id = post.id;
+    card.dataset.id = normalized.id;
     card.innerHTML = `
       <div class="post__header">
-        <img src="${normalizeAvatar(post.owner?.image || AVATAR_DEFAULT)}" alt="Avatar ${post.owner?.nick || "usuario"}" />
+        <img src="${ownerImage}" alt="Avatar ${ownerName}" />
         <div>
-          <h3>${post.owner?.name?.split?.(" ")?.[0] || post.owner?.nick || "Usuario"}</h3>
-          <span>${post.owner?.nick ? `@${post.owner.nick}` : ""} · ${new Date(post.createdAt).toLocaleString()}</span>
+          <h3>${ownerName}</h3>
+          <span>${ownerNick} · ${new Date(normalized.createdAt).toLocaleString()}</span>
         </div>
         <button class="icon-btn icon-more" type="button" aria-label="Opciones"></button>
       </div>
       <figure class="post__media">
-        <img src="${post.image}" alt="${post.caption || "Publicación"}" style="filter:${buildFilterCss(post)}" />
+        <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${buildFilterCss(normalized)}" />
       </figure>
       <div class="post__actions">
-        <button class="chip like" type="button">♥ ${post.likes || 0}</button>
-        <button class="chip" type="button">🏷 ${post.tags?.length || 0}</button>
+        <button class="chip like" type="button">♥ ${normalized.likes || 0}</button>
+        <button class="chip" type="button">🏷 ${normalized.tags?.length || 0}</button>
         <button class="chip" type="button">💬 0</button>
       </div>
-      <p class="post__caption">${post.caption || "Sin descripción"}</p>
+      <p class="post__caption">${normalized.caption || "Sin descripción"}</p>
       <div class="post__hashtags">${
-        post.tags?.length ? post.tags.map((tag) => `#${tag}`).join(" ") : ""
+        normalized.tags?.length ? normalized.tags.map((tag) => `#${tag}`).join(" ") : ""
       }</div>
     `;
     card.addEventListener("click", (event) => {
       if(event.target.closest(".chip")) return;
-      openPublicationModal(post.id);
+      openPublicationModal(normalized.id);
     });
     feedGrid.appendChild(card);
   });
@@ -226,7 +252,9 @@ async function loadFeed(){
     if(!res.ok){
       throw new Error(data?.message || `Error ${res.status} al cargar el feed`);
     }
-    FEED_STATE.posts = Array.isArray(data.items) ? data.items : [];
+    FEED_STATE.posts = Array.isArray(data.items)
+      ? data.items.map(sanitizePublicationForClient)
+      : [];
     renderFeed();
   }catch(error){
     console.error(error);
@@ -253,27 +281,28 @@ async function openPublicationModal(id){
 
 function showPublicationDetail(publication){
   if(!publication) return;
+  const normalized = sanitizePublicationForClient(publication);
   const overlay = document.createElement("div");
   overlay.className = "composer-backdrop is-visible";
   overlay.innerHTML = `
     <div class="composer-modal" style="max-width:900px;">
       <div class="composer-preview" style="background:rgba(0,0,0,.6);">
-        <img src="${publication.image}" alt="${publication.caption || "Publicación"}" style="filter:${buildFilterCss(publication)}" />
+        <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${buildFilterCss(normalized)}" />
       </div>
       <div class="composer-panel" style="padding:26px;">
         <header class="composer-head">
-          <h2>${publication.owner?.nick ? `@${publication.owner.nick}` : "Publicación"}</h2>
+          <h2>${normalized.owner?.nick ? `@${normalized.owner.nick}` : "Publicación"}</h2>
           <button type="button" class="composer-close">×</button>
         </header>
-        <p>${publication.caption || "Sin descripción"}</p>
+        <p>${normalized.caption || "Sin descripción"}</p>
         <div class="hero-meta">
-          <span>${new Date(publication.createdAt).toLocaleString()}</span>
-          <span>${publication.tags?.length || 0} etiquetas</span>
+          <span>${new Date(normalized.createdAt).toLocaleString()}</span>
+          <span>${normalized.tags?.length || 0} etiquetas</span>
         </div>
         <div class="composer-tags">
           ${
-            publication.tags?.length
-              ? publication.tags.map((tag) => `<span>#${tag}</span>`).join(" ")
+            normalized.tags?.length
+              ? normalized.tags.map((tag) => `<span>#${tag}</span>`).join(" ")
               : "<em>Sin etiquetas</em>"
           }
         </div>

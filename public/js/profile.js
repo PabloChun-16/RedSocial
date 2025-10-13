@@ -10,6 +10,7 @@ const profileFullname = document.getElementById("profile-fullname");
 const profileTagline = document.getElementById("profile-tagline");
 const profileRole = document.getElementById("profile-role");
 const profileBio = document.getElementById("profile-bio");
+const editMuralBtn = document.getElementById("edit-mural-btn");
 const postsCountEl = document.getElementById("profile-posts-count");
 const followersCountEl = document.getElementById("profile-followers-count");
 const followingCountEl = document.getElementById("profile-following-count");
@@ -76,6 +77,49 @@ const state = {
   currentTab: "posts"
 };
 
+const normalizeAssetPath = (value, fallbackFolder = "") => {
+  if(!value) return "";
+  const trimmed = value.trim();
+  if(!trimmed) return "";
+  if(trimmed.toLowerCase() === "default.png" || trimmed.includes("iconobase")){
+    return "/media/iconobase.png";
+  }
+  if(/^https?:\/\//i.test(trimmed)) return trimmed;
+  const marker = "uploads/";
+  const lower = trimmed.toLowerCase();
+  const index = lower.lastIndexOf(marker);
+  if(index !== -1){
+    const relative = trimmed.slice(index + marker.length).replace(/^[\\/]+/, "");
+    return `/uploads/${relative}`;
+  }
+  const file = trimmed.split(/[\\/]/).pop();
+  if(file){
+    if(fallbackFolder){
+      return `/uploads/${fallbackFolder}/${file}`;
+    }
+    return `/uploads/${file}`;
+  }
+  return "";
+};
+
+const sanitizePublicationForClient = (publication = {}) => {
+  const normalizedImage = normalizeAssetPath(publication.image || "", "posts");
+  const owner = publication.owner
+    ? {
+        ...publication.owner,
+        image: normalizeAssetPath(publication.owner.image || "", "avatars") || AVATAR_DEFAULT
+      }
+    : null;
+  return {
+    ...publication,
+    image: normalizedImage || "/media/iconobase.png",
+    owner,
+    likes: publication.likes ?? 0,
+    tags: Array.isArray(publication.tags) ? publication.tags : [],
+    adjustments: { ...DEFAULT_ADJUSTMENTS, ...(publication.adjustments || {}) }
+  };
+};
+
 function attachAvatarFallback(img){
   if(!img) return;
   const fallbackAttr = img.dataset.fallback;
@@ -136,18 +180,6 @@ async function fetchProfileFromApi(token){
   return null;
 }
 
-function normalizeAvatar(value){
-  if(!value) return null;
-  const trimmed = value.trim();
-  if(!trimmed) return null;
-  if(trimmed === "default.png") return AVATAR_DEFAULT;
-  if(/^https?:\/\//i.test(trimmed)) return trimmed;
-  if(trimmed.startsWith("/")) return trimmed;
-  if(trimmed.startsWith("./")) return normalizeAvatar(trimmed.slice(2));
-  if(trimmed.startsWith("media/") || trimmed.startsWith("uploads/")) return `/${trimmed}`;
-  return `/media/${trimmed}`;
-}
-
 function formatNumber(value){
   if(typeof value !== "number") value = Number(value) || 0;
   if(value >= 1000){
@@ -160,7 +192,7 @@ function formatNumber(value){
 function applyUser(user){
   const nick = user?.nick || user?.username || user?.email?.split("@")[0] || "usuario";
   const fullName = user?.name ? `${user.name}${user.surname ? ` ${user.surname}` : ""}` : nick;
-  const avatarUrl = normalizeAvatar(user?.avatar || user?.image || user?.photo);
+  const avatarUrl = normalizeAssetPath(user?.avatar || user?.image || user?.photo, "avatars");
 
   if(profileUsername) profileUsername.textContent = `@${nick}`;
   if(profileFullname) profileFullname.textContent = fullName;
@@ -179,12 +211,12 @@ function applyUser(user){
 
   [chipAvatar, heroAvatar].forEach((img) => {
     if(!img) return;
-    if(avatarUrl){
-      img.src = avatarUrl;
-      img.classList.remove("is-fallback");
-    }else{
-      img.src = AVATAR_DEFAULT;
+    const finalSrc = avatarUrl || AVATAR_DEFAULT;
+    img.src = finalSrc;
+    if(finalSrc === AVATAR_DEFAULT){
       img.classList.add("is-fallback");
+    }else{
+      img.classList.remove("is-fallback");
     }
   });
 
@@ -238,18 +270,21 @@ function renderGallery(tab){
   if(dataset.length === 0){
     gallery.hidden = true;
     galleryEmpty.hidden = false;
+    galleryEmpty.style.display = "";
     return;
   }
 
   gallery.hidden = false;
   galleryEmpty.hidden = true;
+  galleryEmpty.style.display = "none";
 
   dataset.forEach((item) => {
     const card = document.createElement("article");
     card.className = "profile-card";
     card.dataset.id = item.id;
+    const imageSrc = normalizeAssetPath(item.image, "posts") || "/media/iconobase.png";
     card.innerHTML = `
-      <img src="${item.image}" alt="${item.caption || "Publicación"}" loading="lazy" />
+      <img src="${imageSrc}" alt="${item.caption || "Publicación"}" loading="lazy" />
       <div class="profile-card__overlay">
         <div class="profile-card__meta">
           <span>♥ ${formatNumber(item.likes || 0)}</span>
@@ -280,6 +315,7 @@ function initHighlights(){
 
 function wireEvents(){
   themeToggle?.addEventListener("click", toggleTheme);
+  editMuralBtn?.addEventListener("click", enableMuralEdit);
   heroEditBtn?.addEventListener("click", () => {
     window.location.href = "/profile-edit.html";
   });
@@ -289,6 +325,66 @@ function wireEvents(){
   galleryEmptyCta?.addEventListener("click", () => {
     window.postComposer?.open();
   });
+}
+
+function enableMuralEdit(){
+  if(!profileBio) return;
+  document.getElementById("mural-save-banner")?.remove();
+  profileBio.contentEditable = "true";
+  profileBio.focus();
+  profileBio.classList.add("is-editing");
+  const saveNotice = document.createElement("div");
+  saveNotice.className = "composer-tags";
+  saveNotice.id = "mural-save-banner";
+  saveNotice.innerHTML = `<span>Escribe tu mural y presiona Enter o haz clic fuera para guardar.</span>`;
+  profileBio.insertAdjacentElement("afterend", saveNotice);
+  const saveHandler = () => {
+    profileBio.contentEditable = "false";
+    profileBio.classList.remove("is-editing");
+    document.getElementById("mural-save-banner")?.remove();
+    profileBio.removeEventListener("blur", saveHandler);
+    profileBio.removeEventListener("keydown", keyHandler);
+    const text = profileBio.textContent.trim();
+    const finalText = text || "Personaliza tu historia: comparte momentos, colecciona recuerdos y mantente cerca de tu círculo creativo.";
+    profileBio.textContent = finalText;
+    saveMural(finalText);
+  };
+  const keyHandler = (event) => {
+    if(event.key === "Enter"){
+      event.preventDefault();
+      profileBio.blur();
+    }
+  };
+  profileBio.addEventListener("blur", saveHandler);
+  profileBio.addEventListener("keydown", keyHandler);
+}
+
+async function saveMural(text){
+  const token = localStorage.getItem("token");
+  if(!token){
+    window.location.replace("/index.html");
+    return;
+  }
+  try{
+    const formData = new FormData();
+    formData.append("bio", text);
+    const res = await fetch("/api/user/profile", {
+      method: "PUT",
+      headers: {
+        Authorization: token
+      },
+      body: formData
+    });
+    if(!res.ok){
+      console.warn("No se pudo guardar el mural");
+    }else{
+      const stored = loadStoredUser() || {};
+      stored.bio = text;
+      localStorage.setItem(USER_KEY, JSON.stringify(stored));
+    }
+  }catch(error){
+    console.warn("Error al guardar mural", error);
+  }
 }
 
 async function fetchUserPublications(){
@@ -302,7 +398,9 @@ async function fetchUserPublications(){
     if(!res.ok){
       throw new Error(data?.message || `Error ${res.status} al cargar publicaciones`);
     }
-    state.collections.posts = Array.isArray(data.items) ? data.items : [];
+    state.collections.posts = Array.isArray(data.items)
+      ? data.items.map(sanitizePublicationForClient)
+      : [];
     state.collections.saved = [];
     state.collections.tagged = [];
     if(postsCountEl) postsCountEl.textContent = state.collections.posts.length.toString();
@@ -330,27 +428,28 @@ async function openPublicationModal(id){
 
 function showPublicationDetail(publication){
   if(!publication) return;
+  const normalized = sanitizePublicationForClient(publication);
   const overlay = document.createElement("div");
   overlay.className = "composer-backdrop is-visible";
   overlay.innerHTML = `
     <div class="composer-modal" style="max-width:900px;">
       <div class="composer-preview" style="background:rgba(0,0,0,.6);">
-        <img src="${publication.image}" alt="${publication.caption || "Publicación"}" style="filter:${buildFilterCss(publication)}" />
+        <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${buildFilterCss(normalized)}" />
       </div>
       <div class="composer-panel" style="padding:26px;">
         <header class="composer-head">
-          <h2>${publication.owner?.nick ? `@${publication.owner.nick}` : "Publicación"}</h2>
+          <h2>${normalized.owner?.nick ? `@${normalized.owner.nick}` : "Publicación"}</h2>
           <button type="button" class="composer-close">×</button>
         </header>
-        <p>${publication.caption || "Sin descripción"}</p>
+        <p>${normalized.caption || "Sin descripción"}</p>
         <div class="hero-meta">
-          <span>${new Date(publication.createdAt).toLocaleString()}</span>
-          <span>${publication.tags?.length || 0} etiquetas</span>
+          <span>${new Date(normalized.createdAt).toLocaleString()}</span>
+          <span>${normalized.tags?.length || 0} etiquetas</span>
         </div>
         <div class="composer-tags">
           ${
-            publication.tags?.length
-              ? publication.tags.map((tag) => `<span>#${tag}</span>`).join(" ")
+            normalized.tags?.length
+              ? normalized.tags.map((tag) => `<span>#${tag}</span>`).join(" ")
               : "<em>Sin etiquetas</em>"
           }
         </div>
@@ -404,7 +503,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 if(window.postComposer){
   window.postComposer.registerListener((publication) => {
     if(publication?.isOwn){
-      state.collections.posts.unshift(publication);
+      state.collections.posts.unshift(sanitizePublicationForClient(publication));
       if(postsCountEl) postsCountEl.textContent = state.collections.posts.length.toString();
       renderGallery(state.currentTab);
     }

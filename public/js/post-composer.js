@@ -33,48 +33,57 @@
           <button type="button" class="composer-close" aria-label="Cerrar">×</button>
         </header>
         <div class="composer-error composer-hidden"></div>
-        <section class="composer-filters" aria-label="Filtros"></section>
-        <section class="composer-sliders">
-          ${[
-            { id: "brightness", label: "Brillo", min: 0.5, max: 1.5, step: 0.01 },
-            { id: "contrast", label: "Contraste", min: 0.5, max: 1.5, step: 0.01 },
-            { id: "saturation", label: "Saturación", min: 0, max: 2, step: 0.01 },
-            { id: "warmth", label: "Temperatura", min: -40, max: 40, step: 1 },
-            { id: "fade", label: "Atenuar", min: 0, max: 1, step: 0.01 }
-          ]
-            .map(
-              (slider) => `
-              <div class="composer-slider">
-                <label for="composer-${slider.id}">${slider.label}</label>
-                <input type="range"
-                  id="composer-${slider.id}"
-                  name="${slider.id}"
-                  min="${slider.min}"
-                  max="${slider.max}"
-                  step="${slider.step}"
-                  value="${DEFAULT_ADJUSTMENTS[slider.id] ?? 0}" />
-              </div>
-            `
-            )
-            .join("")}
-        </section>
-        <form class="composer-form">
-          <textarea id="composer-caption" placeholder="Escribe una descripción..."></textarea>
-          <div class="composer-tags">
-            <label for="composer-tags-input">Etiquetas (separadas por comas)</label>
-            <input id="composer-tags-input" type="text" placeholder="Ej: viaje, inspiración, arte" />
-          </div>
-        </form>
-        <div class="composer-actions">
-          <select id="composer-visibility">
-            <option value="public">Público</option>
-            <option value="friends">Solo seguidores</option>
-          </select>
-          <div>
+        <section class="composer-step composer-step--edit is-active">
+          <section class="composer-filters" aria-label="Filtros"></section>
+          <section class="composer-sliders">
+            ${[
+              { id: "brightness", label: "Brillo", min: 0.5, max: 1.5, step: 0.01 },
+              { id: "contrast", label: "Contraste", min: 0.5, max: 1.5, step: 0.01 },
+              { id: "saturation", label: "Saturación", min: 0, max: 2, step: 0.01 },
+              { id: "warmth", label: "Temperatura", min: -40, max: 40, step: 1 },
+              { id: "fade", label: "Atenuar", min: 0, max: 1, step: 0.01 }
+            ]
+              .map(
+                (slider) => `
+                <div class="composer-slider">
+                  <label for="composer-${slider.id}">${slider.label}</label>
+                  <input type="range"
+                    id="composer-${slider.id}"
+                    name="${slider.id}"
+                    min="${slider.min}"
+                    max="${slider.max}"
+                    step="${slider.step}"
+                    value="${DEFAULT_ADJUSTMENTS[slider.id] ?? 0}" />
+                </div>
+              `
+              )
+              .join("")}
+          </section>
+          <div class="composer-actions composer-actions--simple">
             <button type="button" class="btn-cancel">Cancelar</button>
-            <button type="button" class="btn-submit">Publicar</button>
+            <button type="button" class="btn-next">Siguiente</button>
           </div>
-        </div>
+        </section>
+
+        <section class="composer-step composer-step--details">
+          <form class="composer-form">
+            <textarea id="composer-caption" placeholder="Escribe una descripción..."></textarea>
+            <div class="composer-tags">
+              <label for="composer-tags-input">Etiquetas (separadas por comas)</label>
+              <input id="composer-tags-input" type="text" placeholder="Ej: viaje, inspiración, arte" />
+            </div>
+          </form>
+          <div class="composer-actions">
+            <select id="composer-visibility">
+              <option value="public">Público</option>
+              <option value="friends">Solo seguidores</option>
+            </select>
+            <div>
+              <button type="button" class="btn-back">Atrás</button>
+              <button type="button" class="btn-submit">Publicar</button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   `;
@@ -87,18 +96,19 @@
         filter: "original",
         adjustments: { ...DEFAULT_ADJUSTMENTS }
       };
-      this.listeners = new Set();
-      this.token = () => localStorage.getItem("token");
-      this.user = () => {
-        try {
-          return JSON.parse(localStorage.getItem("user"));
-        } catch (err) {
-          return null;
-        }
-      };
-      this.buildModal();
-      this.registerGlobalTriggers();
-    }
+    this.listeners = new Set();
+    this.token = () => localStorage.getItem("token");
+    this.user = () => {
+      try {
+        return JSON.parse(localStorage.getItem("user"));
+      } catch (err) {
+        return null;
+      }
+    };
+    this.hideTimeout = null;
+    this.buildModal();
+    this.registerGlobalTriggers();
+  }
 
     buildModal() {
       this.backdrop = document.createElement("div");
@@ -107,6 +117,7 @@
       document.body.appendChild(this.backdrop);
 
       this.modal = this.backdrop.querySelector(".composer-modal");
+      this.panel = this.backdrop.querySelector(".composer-panel");
       this.previewImg = this.backdrop.querySelector(".composer-preview__image");
       this.uploadArea = this.backdrop.querySelector(".composer-upload");
       this.fileInput = this.backdrop.querySelector('input[type="file"]');
@@ -117,29 +128,26 @@
       this.tagsInput = this.backdrop.querySelector("#composer-tags-input");
       this.visibilitySelect = this.backdrop.querySelector("#composer-visibility");
       this.closeBtn = this.backdrop.querySelector(".composer-close");
-      this.cancelBtn = this.backdrop.querySelector(".btn-cancel");
+      this.cancelBtns = Array.from(this.backdrop.querySelectorAll(".btn-cancel"));
+      this.nextBtn = this.backdrop.querySelector(".btn-next");
+      this.backBtn = this.backdrop.querySelector(".btn-back");
       this.submitBtn = this.backdrop.querySelector(".btn-submit");
       this.uploadButton = this.backdrop.querySelector(".composer-upload__button");
+      this.backdrop.style.display = "none";
 
       this.renderFilters();
       this.attachEvents();
     }
 
-    registerGlobalTriggers() {
-      const setup = () => {
-        document.querySelectorAll(".js-open-composer").forEach((btn) => {
-          if (!btn.dataset.composerBound) {
-            btn.addEventListener("click", (event) => {
-              event.preventDefault();
-              this.open();
-            });
-            btn.dataset.composerBound = "true";
-          }
-        });
-      };
-      document.addEventListener("DOMContentLoaded", setup);
-      setup();
-    }
+  registerGlobalTriggers() {
+    const handler = (event) => {
+      const trigger = event.target.closest(".js-open-composer");
+      if (!trigger) return;
+      event.preventDefault();
+      this.open();
+    };
+    document.addEventListener("click", handler);
+  }
 
     registerListener(fn) {
       if (typeof fn === "function") {
@@ -166,7 +174,7 @@
         button.dataset.filter = filter.id;
         button.innerHTML = `
           <div class="composer-filter__preview">
-            <img src="/media/iconobase.png" alt="${filter.label}" style="filter:${filter.css};" />
+            <img src="${this.state.previewUrl || "/media/iconobase.png"}" alt="${filter.label}" style="filter:${filter.css};" />
           </div>
           <span>${filter.label}</span>
         `;
@@ -181,8 +189,16 @@
 
     attachEvents() {
       this.closeBtn.addEventListener("click", () => this.close());
-      this.cancelBtn.addEventListener("click", () => this.close());
+      this.cancelBtns.forEach((btn) => btn.addEventListener("click", () => this.close()));
       this.submitBtn.addEventListener("click", () => this.handleSubmit());
+      if(this.nextBtn) this.nextBtn.addEventListener("click", () => {
+        if(!this.state.file){
+          this.showError("Selecciona una imagen para continuar.");
+          return;
+        }
+        this.goToStep("details");
+      });
+      if(this.backBtn) this.backBtn.addEventListener("click", () => this.goToStep("edit"));
       this.uploadButton.addEventListener("click", () => this.fileInput.click());
       this.fileInput.addEventListener("change", (event) => {
         const file = event.target.files?.[0];
@@ -231,6 +247,19 @@
       });
     }
 
+    goToStep(step){
+      const edit = this.backdrop.querySelector('.composer-step--edit');
+      const details = this.backdrop.querySelector('.composer-step--details');
+      if(step === 'details'){
+        edit?.classList.remove('is-active');
+        details?.classList.add('is-active');
+      }else{
+        details?.classList.remove('is-active');
+        edit?.classList.add('is-active');
+      }
+      if(this.panel){ this.panel.scrollTop = 0; }
+    }
+
     handleFile(file) {
       if (!file.type.startsWith("image/")) {
         this.showError("El archivo debe ser una imagen.");
@@ -243,6 +272,8 @@
       this.previewImg.src = this.state.previewUrl;
       this.previewImg.classList.remove("composer-hidden");
       this.uploadArea.classList.add("composer-hidden");
+      // Actualiza la imagen en las miniaturas de filtros y aplica el filtro al preview
+      this.renderFilters();
       this.applyPreviewFilter();
     }
 
@@ -284,6 +315,7 @@
       this.renderFilters();
       this.applyPreviewFilter();
       this.clearError();
+      this.goToStep('edit');
     }
 
     open() {
@@ -293,16 +325,26 @@
         window.location.replace("/index.html");
         return;
       }
-      this.reset();
+    this.reset();
+    if(this.panel){ this.panel.scrollTop = 0; }
+    this.backdrop.style.display = "flex";
+    requestAnimationFrame(() => {
       this.backdrop.classList.add("is-visible");
-    }
+    });
+  }
 
-    close() {
-      this.backdrop.classList.remove("is-visible");
-      if (this.state.previewUrl) {
-        URL.revokeObjectURL(this.state.previewUrl);
+  close() {
+    this.backdrop.classList.remove("is-visible");
+    clearTimeout(this.hideTimeout);
+    this.hideTimeout = setTimeout(() => {
+      if(!this.backdrop.classList.contains("is-visible")){
+        this.backdrop.style.display = "none";
       }
+    }, 320);
+    if (this.state.previewUrl) {
+      URL.revokeObjectURL(this.state.previewUrl);
     }
+  }
 
     showError(message) {
       this.errorBox.textContent = message;

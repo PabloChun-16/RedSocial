@@ -69,6 +69,11 @@ body.profile-view{
   gap:6px;
 }
 
+.brand-link{
+  color:inherit;
+  text-decoration:none;
+}
+
 .brand-mark{
   font-family:"Great Vibes","Brush Script MT",cursive;
   font-size:40px;
@@ -308,6 +313,17 @@ body.profile-view{
   font-size:15px;
   line-height:1.6;
   max-width:640px;
+}
+
+.hero-bio.is-editing{
+  outline:2px solid var(--accent);
+  border-radius:18px;
+  padding:8px 12px;
+  background:rgba(0,0,0,.18);
+}
+
+.profile-view.theme-day .hero-bio.is-editing{
+  background:rgba(255,255,255,.8);
 }
 
 .hero-meta{

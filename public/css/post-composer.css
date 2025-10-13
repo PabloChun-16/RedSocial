@@ -18,7 +18,7 @@
   background:var(--composer-backdrop);
   backdrop-filter:blur(24px);
   -webkit-backdrop-filter:blur(24px);
-  display:flex;
+  display:none;
   align-items:center;
   justify-content:center;
   padding:24px;
@@ -29,13 +29,15 @@
 }
 
 .composer-backdrop.is-visible{
+  display:flex;
   opacity:1;
   pointer-events:auto;
 }
 
 .composer-modal{
   width:min(960px,100%);
-  max-height:90vh;
+  /* Usa toda la altura visible para garantizar scroll interno en el panel */
+  height:90vh;
   border-radius:32px;
   overflow:hidden;
   display:grid;
@@ -67,6 +69,10 @@
   align-items:center;
   justify-content:center;
   overflow:hidden;
+  /* Asegura que el contenedor de la imagen llene la altura del modal */
+  height:100%;
+  /* Permite que el item dentro del grid pueda encoger y habilitar scroll del panel */
+  min-height:0;
 }
 
 .composer-preview::after{
@@ -131,7 +137,12 @@
   flex-direction:column;
   padding:26px 26px 24px;
   gap:24px;
-  overflow:auto;
+  /* Habilita scroll vertical cuando el contenido se desborda */
+  overflow-y:auto;
+  height:100%;
+  min-height:0; /* necesario dentro de CSS grid para que el scroll funcione */
+  padding-bottom:16px; /* espacio de respiración inferior */
+  scroll-padding-bottom:96px; /* evita que el último contenido quede oculto tras acciones pegajosas */
 }
 
 .composer-head{
@@ -162,6 +173,11 @@
   opacity:1;
   transform:scale(1.1);
 }
+
+/* Pasos del compositor */
+.composer-step{ display:none; }
+.composer-step.is-active{ display:block; }
+
 
 .composer-filters{
   display:flex;
@@ -218,6 +234,13 @@
   font-size:11px;
   letter-spacing:.18em;
   text-transform:uppercase;
+}
+
+/* Mejor legibilidad en modo claro para los nombres de filtros */
+.feed.theme-day .composer-filter span,
+.profile-view.theme-day .composer-filter span{
+  color:#1f2937;
+  opacity:.92;
 }
 
 .composer-sliders{
@@ -310,12 +333,27 @@
   color:#1f2937;
 }
 
+
 .composer-actions{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:12px;
-  margin-top:auto;
+  /* Fija los botones visibles mientras el panel hace scroll */
+  position:sticky;
+  bottom:0;
+  margin-top:12px;
+  padding-top:10px;
+  padding-bottom:10px;
+  background:var(--composer-panel);
+  border-top:1px solid var(--composer-border);
+  z-index:2;
+}
+
+.feed.theme-day .composer-actions,
+.profile-view.theme-day .composer-actions{
+  background:var(--composer-panel-day);
+  border-top:1px solid var(--composer-border-day);
 }
 
 .composer-actions select{
@@ -349,11 +387,13 @@
 }
 .composer-actions .btn-cancel:hover{ transform:translateY(-1px); }
 
-.composer-actions .btn-submit{
+.composer-actions .btn-submit,
+.composer-actions .btn-next{
   background:linear-gradient(135deg,#4ea8ff,#7651ff);
   color:#fff;
 }
-.composer-actions .btn-submit:hover{
+.composer-actions .btn-submit:hover,
+.composer-actions .btn-next:hover{
   transform:translateY(-1px);
   box-shadow:0 18px 40px rgba(0,0,0,.32);
 }
