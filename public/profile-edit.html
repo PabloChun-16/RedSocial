@@ -6,72 +6,60 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Great+Vibes&display=swap"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Great+Vibes&display=swap" />
+  <link rel="stylesheet" href="/css/app-shell.css" />
   <link rel="stylesheet" href="/css/profile-edit.css" />
 </head>
-<body class="profile theme-day">
-  <div class="profile-bg" aria-hidden="true"></div>
 
-  <header class="profile-header glass">
-    <div class="brand">
-      <div class="brand-mark">LuminA</div>
-      <span class="brand-sub">Moments</span>
+<body class="app-shell" data-page="profile">
+  <div id="app-root">
+    <div id="page-content" class="profile-edit" hidden>
+      <section class="profile-card glass">
+        <header class="profile-card__header">
+          <div class="avatar-stack">
+            <img id="settings-avatar-preview" data-fallback="avatar" src="/media/iconobase.png" alt="Tu avatar" />
+            <label class="avatar-upload">
+              <input id="settings-avatar" name="avatar" type="file" accept="image/*" />
+              Cambiar foto
+            </label>
+          </div>
+          <div class="profile-card__intro">
+            <h1>Personaliza tu espacio</h1>
+            <p>Actualiza tu imagen, elige un nuevo nick y refuerza tu contraseña.</p>
+          </div>
+        </header>
+
+        <form id="profile-form" class="profile-form" enctype="multipart/form-data">
+          <div class="field">
+            <label for="settings-nick">Nick</label>
+            <input id="settings-nick" name="nick" type="text" required autocomplete="nickname" />
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="settings-current-password">Contraseña actual</label>
+              <input id="settings-current-password" name="currentPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
+            </div>
+            <div class="field">
+              <label for="settings-new-password">Nueva contraseña</label>
+              <input id="settings-new-password" name="newPassword" type="password" autocomplete="new-password" placeholder="••••••••" />
+            </div>
+          </div>
+          <p class="hint">
+            Para cambiar la contraseña debes completar ambos campos.
+          </p>
+
+          <div class="form-actions">
+            <button class="btn-primary" type="submit">Guardar cambios</button>
+            <a class="btn-secondary" href="/profile.html">Cancelar</a>
+          </div>
+          <div id="profile-message" class="form-message" role="status" aria-live="polite"></div>
+        </form>
+      </section>
     </div>
-    <nav class="profile-nav">
-      <a class="nav-link" href="/feed.html">← Volver al feed</a>
-      <button id="profile-theme-toggle" class="toggle-theme" type="button">
-        <span class="icon-sun">☀️</span>
-        <span class="icon-moon">🌙</span>
-        <span class="label">Modo</span>
-      </button>
-    </nav>
-  </header>
+  </div>
 
-  <main class="profile-shell">
-    <section class="profile-card glass">
-      <header class="profile-card__header">
-        <div class="avatar-stack">
-          <img id="settings-avatar-preview" data-fallback="avatar" src="/media/iconobase.png" alt="Tu avatar" />
-          <label class="avatar-upload">
-            <input id="settings-avatar" name="avatar" type="file" accept="image/*" />
-            Cambiar foto
-          </label>
-        </div>
-        <div class="profile-card__intro">
-          <h1>Personaliza tu espacio</h1>
-          <p>Actualiza tu imagen, elige un nuevo nick y refuerza tu contraseña.</p>
-        </div>
-      </header>
-
-      <form id="profile-form" class="profile-form" enctype="multipart/form-data">
-        <div class="field">
-          <label for="settings-nick">Nick</label>
-          <input id="settings-nick" name="nick" type="text" required autocomplete="nickname" />
-        </div>
-
-        <div class="field-grid">
-          <div class="field">
-            <label for="settings-current-password">Contraseña actual</label>
-            <input id="settings-current-password" name="currentPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
-          </div>
-          <div class="field">
-            <label for="settings-new-password">Nueva contraseña</label>
-            <input id="settings-new-password" name="newPassword" type="password" autocomplete="new-password" placeholder="••••••••" />
-          </div>
-        </div>
-        <p class="hint">
-          Para cambiar la contraseña debes completar ambos campos.
-        </p>
-
-        <div class="form-actions">
-          <button class="btn-primary" type="submit">Guardar cambios</button>
-          <a class="btn-secondary" href="/profile.html">Cancelar</a>
-        </div>
-        <div id="profile-message" class="form-message" role="status" aria-live="polite"></div>
-      </form>
-    </section>
-  </main>
-
+  <script src="/js/app-shell.js" defer></script>
   <script src="/js/profile-edit.js" defer></script>
 </body>
 </html>
