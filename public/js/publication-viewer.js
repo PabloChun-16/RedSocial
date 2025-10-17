@@ -297,7 +297,11 @@
     menu.style.right = "16px";
     menu.style.zIndex = 40;
     menu.style.display = "none";
-    menu.innerHTML = `<button type="button" class="publication-viewer__menu-item" data-action="delete">Eliminar</button>`;
+    menu.innerHTML = `
+      <button type="button" class="publication-viewer__menu-item" data-action="delete">
+        <span class="icon icon-trash" aria-hidden="true"></span>
+        <span>Eliminar</span>
+      </button>`;
     state.refs.controlsWrap.appendChild(menu);
     state.refs.menu = menu;
 
