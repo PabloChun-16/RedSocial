@@ -85,6 +85,7 @@ body.theme-day .stories__add{
   transition:transform .25s ease, border-color .25s ease, box-shadow .25s ease;
   color:var(--ink-muted);
   text-align:center;
+  box-sizing: border-box; /* keep padding inside size */
 }
 
 .story:hover{
@@ -101,7 +102,13 @@ body.theme-day .stories__add{
   background:linear-gradient(135deg,#79d9ff,#ff8fab 70%);
   display:grid;
   place-items:center;
-  overflow:hidden;
+  overflow:hidden; /* crop tall images inside the circular ring */
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-width:68px;
+  min-height:68px;
+  aspect-ratio: 1 / 1; /* keep circle even if parent stretches */
+  position: relative; /* positioned container for absolute image */
 }
 
 .story.is-self .story-ring{
@@ -109,10 +116,14 @@ body.theme-day .stories__add{
 }
 
 .story-ring img{
-  width:100%;
-  height:100%;
+  position:absolute;
+  inset:3px; /* match padding so image fits inside ring */
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
   border-radius:50%;
   object-fit:cover;
+  object-position:center center;
+  display:block;
 }
 
 .story-name{
@@ -215,6 +226,7 @@ body.theme-day .icon-btn{
   align-items:center;
   gap:12px;
   z-index:1;
+  position: relative;
 }
 
 .post__header img{
@@ -222,6 +234,8 @@ body.theme-day .icon-btn{
   height:46px;
   border-radius:50%;
   object-fit:cover;
+  object-position:center center;
+  display:block;
 }
 
 .post__header h3{
@@ -256,6 +270,69 @@ body.theme-day .icon-btn{
   transform:scale(1.03);
 }
 
+/* Botón ... minimalista (sin borde) */
+.post__more-btn{
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  cursor: pointer;
+  opacity: .85;
+  transition: opacity .2s ease, transform .18s ease, background-color .18s ease;
+}
+.post__more-btn:hover{
+  opacity: 1;
+  transform: translateY(-1px);
+  background: rgba(255,255,255,.06);
+}
+body.theme-day .post__more-btn{ color:#1f2937; }
+body.theme-day .post__more-btn:hover{ background: rgba(24,36,68,.06); }
+.post__more-btn .icon{ width: 18px; height: 18px; }
+body.theme-day .post__more-btn{ color: #1f2937; }
+
+/* Menú contextual del post */
+.post__menu{
+  position: absolute;
+  top: 50px;
+  right: 10px;
+  min-width: 160px;
+  background: rgba(15,18,35,.96);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.25);
+  display: none;
+  overflow: hidden;
+  z-index: 5;
+}
+body.theme-day .post__menu{
+  background: rgba(255,255,255,.98);
+  border-color: rgba(24,38,70,.12);
+  box-shadow: 0 12px 28px rgba(24,38,70,.08);
+}
+.post__menu-item{
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 600;
+}
+.post__menu-item:hover{ background: rgba(255,255,255,.06); }
+body.theme-day .post__menu-item:hover{ background: rgba(24,36,68,.06); }
+.post__menu-item .icon{ width: 18px; height: 18px; background: currentColor; }
+.post__menu-item[data-action="delete"]{ color: #f05252; }
+body.theme-day .post__menu-item[data-action="delete"]{ color: #c53030; }
+
 .post__actions{
   display:flex;
   gap:10px;
@@ -287,9 +364,67 @@ body.theme-day .icon-btn{
   background:rgba(255,99,132,.45);
 }
 
+.chip.like.is-active{
+  background:rgba(255,99,132,.6);
+}
+
+.chip.comment{
+  background:rgba(113,203,230,.24);
+}
+
+.chip.comment:hover{
+  background:rgba(113,203,230,.34);
+}
+
+.chip.save{
+  background:rgba(78,168,255,.22);
+}
+
+.chip.save:hover{
+  background:rgba(78,168,255,.32);
+}
+
+.chip.save.is-active{
+  background:rgba(78,168,255,.42);
+}
+
+.chip.is-active{
+  color:#fff;
+}
+
 body.theme-day .chip{
   color:#1f2937;
   background:rgba(255,255,255,.85);
+}
+
+body.theme-day .chip.is-active{
+  color:#1f2937;
+}
+
+body.theme-day .chip.like{
+  background:rgba(255,110,150,.26);
+}
+
+body.theme-day .chip.like.is-active{
+  background:rgba(255,110,150,.4);
+  color:#fff;
+}
+
+body.theme-day .chip.comment{
+  background:rgba(90,180,220,.18);
+}
+
+body.theme-day .chip.comment:hover{
+  background:rgba(90,180,220,.26);
+}
+
+body.theme-day .chip.save{
+  background:rgba(110,170,255,.24);
+}
+
+body.theme-day .chip.save.is-active{
+  background:rgba(110,170,255,.35);
+  color:#1f2937;
 }
 
 .post__caption{

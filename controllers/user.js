@@ -10,6 +10,8 @@ const resolvePublicPath = (relativePath = "") =>
 const sanitizeUser = (doc) => {
   if(!doc) return null;
   const obj = typeof doc.toObject === "function" ? doc.toObject() : doc;
+  const notifications = Array.isArray(obj.notifications) ? obj.notifications : [];
+  const unreadCount = notifications.filter((item) => !item?.isRead).length;
   return {
     id: obj._id?.toString() ?? obj.id,
     name: obj.name,
@@ -17,7 +19,56 @@ const sanitizeUser = (doc) => {
     nick: obj.nick,
     email: obj.email,
     role: obj.role,
-    image: obj.image || "default.png"
+    image: obj.image || "iconobase.png",
+    bio: obj.bio,
+    notificationsUnread: unreadCount
+  };
+};
+
+const normalizeUserRef = (value) => {
+  if(!value) return null;
+  const source =
+    typeof value.toObject === "function" ? value.toObject({ virtuals: false }) : value;
+  if(typeof source === "string"){
+    return { id: source };
+  }
+  if(typeof source === "object" && source !== null){
+    const id = source._id?.toString?.() ?? source.id ?? value?.toString?.();
+    return {
+      id,
+      nick: source.nick,
+      name: source.name,
+      image: source.image
+    };
+  }
+  return null;
+};
+
+const sanitizeNotification = (doc) => {
+  if(!doc) return null;
+  const data = typeof doc.toObject === "function" ? doc.toObject({ virtuals: false }) : doc;
+  const actor = normalizeUserRef(data.actor);
+  let publication = null;
+  if(data.publication){
+    const raw =
+      typeof data.publication.toObject === "function"
+        ? data.publication.toObject({ virtuals: false })
+        : data.publication;
+    publication = {
+      id: raw._id?.toString() ?? raw.id,
+      image: raw.image,
+      caption: raw.caption,
+      owner: normalizeUserRef(raw.user)
+    };
+  }
+  return {
+    id: data._id?.toString() ?? data.id,
+    type: data.type,
+    message: data.message,
+    isRead: Boolean(data.isRead),
+    createdAt: data.createdAt,
+    actor,
+    publication
   };
 };
 
@@ -98,7 +149,7 @@ const login = async (req, res) => {
 
     // Buscar en la BD si existe el email
     const user = await User.findOne({ email: params.email })
-      .select({ name: 1, surname: 1, nick: 1, email: 1, role: 1, image: 1, password: 1 })
+      .select({ name: 1, surname: 1, nick: 1, email: 1, role: 1, image: 1, password: 1, bio: 1, notifications: 1 })
       .exec();
 
     if (!user) {
@@ -160,7 +211,7 @@ const listUsers = async (req, res) => {
 };
 
 const removeAvatarFile = (storedPath) => {
-  if(!storedPath || storedPath === "default.png") return;
+  if(!storedPath || storedPath === "iconobase.png") return;
   const absolute = resolvePublicPath(storedPath);
   fs.promises
     .access(absolute, fs.constants.F_OK)
@@ -259,7 +310,7 @@ const updateProfile = async (req, res) => {
     }
 
     if(uploadedAvatar){
-      if(user.image && user.image !== "default.png"){
+      if(user.image && user.image !== "iconobase.png"){
         removeAvatarFile(user.image);
       }
       user.image = uploadedAvatar;
@@ -283,11 +334,93 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const listNotifications = async (req, res) => {
+  try{
+    const user = await User.findById(req.user.id)
+      .select("notifications")
+      .populate("notifications.actor", "nick name image")
+      .populate({
+        path: "notifications.publication",
+        select: "image caption user",
+        populate: { path: "user", select: "nick name image" }
+      })
+      .exec();
+
+    if(!user){
+      return res.status(404).json({
+        status: "error",
+        message: "Usuario no encontrado"
+      });
+    }
+
+    const items = Array.isArray(user.notifications)
+      ? user.notifications.map(sanitizeNotification)
+      : [];
+
+    return res.status(200).json({
+      status: "success",
+      items,
+      unread: items.filter((item) => item && !item.isRead).length
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudieron obtener las notificaciones",
+      error: error.message
+    });
+  }
+};
+
+const markNotificationsAsRead = async (req, res) => {
+  const ids = Array.isArray(req.body?.ids)
+    ? req.body.ids.map((id) => id?.toString?.()).filter(Boolean)
+    : [];
+  try{
+    if(ids.length){
+      await User.updateOne(
+        { _id: req.user.id },
+        { $set: { "notifications.$[item].isRead": true } },
+        { arrayFilters: [{ "item._id": { $in: ids } }] }
+      ).exec();
+    }else{
+      await User.updateOne(
+        { _id: req.user.id, "notifications.isRead": false },
+        { $set: { "notifications.$[item].isRead": true } },
+        { arrayFilters: [{ "item.isRead": false }] }
+      ).exec();
+    }
+
+    const user = await User.findById(req.user.id)
+      .select("notifications")
+      .exec();
+    if(!user){
+      return res.status(404).json({
+        status: "error",
+        message: "Usuario no encontrado"
+      });
+    }
+    const sanitized = sanitizeUser(user);
+
+    return res.status(200).json({
+      status: "success",
+      unread: sanitized?.notificationsUnread ?? 0
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudieron actualizar las notificaciones",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   pruebaUser,
   register,
   login,
   listUsers,
   getProfile,
-  updateProfile
+  updateProfile,
+  listNotifications,
+  markNotificationsAsRead
 };

@@ -8,8 +8,10 @@
 }
 
 .profile-view.theme-day,
-.feed.theme-day{
-  --composer-backdrop:rgba(12,16,34,.36);
+.feed.theme-day,
+.composer-backdrop.is-day{
+  /* Use a light translucent backdrop for day theme so the composer doesn't look dark */
+  --composer-backdrop: rgba(255,255,255,.6);
 }
 
 .composer-backdrop{
@@ -32,6 +34,47 @@
   display:flex;
   opacity:1;
   pointer-events:auto;
+}
+
+.composer-backdrop.is-day{
+  color:#1f2937;
+}
+
+.composer-backdrop.is-day .composer-modal{
+  background:var(--composer-panel-day);
+  border:1px solid var(--composer-border-day);
+  color:#1f2937;
+}
+
+.composer-modal.is-day{
+  background:var(--composer-panel-day);
+  border:1px solid var(--composer-border-day);
+  color:#1f2937;
+}
+
+/* Day-specific visual refinements to avoid dark patches on the left panel */
+.composer-modal.is-day{
+  /* soften the heavy dark shadow used in night theme */
+  box-shadow: 0 20px 40px rgba(24,38,70,.08);
+}
+
+.composer-backdrop.is-day .composer-preview::after{
+  /* use a subtle cool border over the light preview area */
+  border:1px solid rgba(24,38,70,.06);
+}
+
+.composer-modal.is-day .composer-actions{
+  background:var(--composer-panel-day);
+  border-top:1px solid var(--composer-border-day);
+}
+
+.composer-backdrop.is-day .composer-preview{
+  background:rgba(240,244,255,.82);
+}
+
+.composer-backdrop.is-day .composer-upload{
+  background:linear-gradient(160deg,rgba(240,244,255,.92),rgba(240,244,255,.86));
+  color:#1f2937;
 }
 
 .composer-modal{
@@ -130,6 +173,327 @@
 .composer-upload button:hover{
   transform:translateY(-2px);
   box-shadow:0 18px 38px rgba(0,0,0,.35);
+}
+
+.publication-viewer{
+  z-index:1000;
+}
+
+.publication-viewer__modal{
+  max-width:920px;
+}
+
+.publication-viewer__media{
+  background:rgba(0,0,0,.55);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:12px;
+}
+
+.publication-viewer__media img{
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+  border-radius:18px;
+}
+
+.publication-viewer__panel{
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  padding:28px;
+  color:inherit;
+}
+
+.publication-viewer__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.publication-viewer__owner{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.publication-viewer__owner-avatar{
+  width:48px;
+  height:48px;
+  border-radius:14px;
+  object-fit:cover;
+}
+
+.publication-viewer__owner-meta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.publication-viewer__owner-name{
+  margin:0;
+  font-size:18px;
+  font-weight:600;
+}
+
+.publication-viewer__owner-date{
+  font-size:12px;
+  opacity:.7;
+}
+
+.publication-viewer__caption{
+  margin:0;
+  font-size:15px;
+  line-height:1.5;
+}
+
+.publication-viewer__actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:12px;
+}
+
+.publication-viewer__btn{
+  border:0;
+  border-radius:999px;
+  padding:8px 18px;
+  font-weight:600;
+  cursor:pointer;
+  background:rgba(255,255,255,.18);
+  color:inherit;
+  transition:background .2s ease, transform .2s ease;
+}
+
+.publication-viewer__btn:hover{
+  transform:translateY(-1px);
+  background:rgba(255,255,255,.28);
+}
+
+.publication-viewer__btn--like.is-active{
+  background:rgba(255,99,132,.52);
+  color:#fff;
+}
+
+.publication-viewer__btn--save{
+  background:rgba(78,168,255,.26);
+}
+
+.publication-viewer__btn--save.is-active{
+  background:rgba(78,168,255,.38);
+  color:#fff;
+}
+
+.publication-viewer__likes{
+  font-weight:600;
+  opacity:.8;
+}
+
+.publication-viewer__tags{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.publication-viewer__tag{
+  padding:6px 14px;
+  border-radius:999px;
+  background:rgba(255,255,255,.18);
+  font-size:12px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+
+.publication-viewer__tag.is-empty{
+  opacity:.6;
+}
+
+.publication-viewer__comments{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.publication-viewer__comments-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  font-size:12px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  opacity:.72;
+}
+
+.publication-viewer__comments-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  max-height:240px;
+  overflow-y:auto;
+  padding-right:6px;
+}
+
+.publication-viewer__comments-empty{
+  margin:0;
+  font-size:13px;
+  opacity:.7;
+}
+
+.publication-comment{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+}
+
+.publication-comment__avatar img{
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  object-fit:cover;
+}
+
+.publication-comment__body{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  background:rgba(0,0,0,.22);
+  border-radius:16px;
+  padding:12px 16px;
+}
+
+.publication-comment__header{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:600;
+  font-size:13px;
+}
+
+.publication-comment__badge{
+  border-radius:999px;
+  padding:2px 8px;
+  background:rgba(78,168,255,.3);
+  font-size:11px;
+  letter-spacing:.12em;
+}
+
+.publication-comment__time{
+  margin-left:auto;
+  font-size:11px;
+  opacity:.6;
+}
+
+.publication-comment__text{
+  margin:0;
+  font-size:14px;
+  line-height:1.5;
+}
+
+.publication-viewer__form{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.publication-viewer__input{
+  flex:1;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.24);
+  background:rgba(0,0,0,.28);
+  color:inherit;
+  padding:10px 16px;
+  font-size:14px;
+  transition:border-color .2s ease, background .2s ease;
+}
+
+.publication-viewer__input:focus{
+  outline:none;
+  border-color:rgba(78,168,255,.45);
+  background:rgba(0,0,0,.34);
+}
+
+.publication-viewer__form button{
+  border:0;
+  border-radius:999px;
+  padding:10px 18px;
+  font-weight:600;
+  cursor:pointer;
+  background:rgba(78,168,255,.32);
+  color:#fff;
+  transition:background .2s ease, transform .2s ease;
+}
+
+.publication-viewer__form button:hover{
+  transform:translateY(-1px);
+  background:rgba(78,168,255,.4);
+}
+
+.publication-viewer__form.is-busy button{
+  opacity:.6;
+  pointer-events:none;
+}
+
+.publication-viewer.is-day .publication-viewer__media{
+  background:rgba(240,244,255,.86);
+}
+
+.publication-viewer.is-day .publication-viewer__panel{
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__btn{
+  background:rgba(24,36,68,.08);
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__btn:hover{
+  background:rgba(24,36,68,.12);
+}
+
+.publication-viewer.is-day .publication-viewer__btn--like.is-active{
+  background:rgba(255,110,150,.36);
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__btn--save{
+  background:rgba(110,170,255,.24);
+}
+
+.publication-viewer.is-day .publication-viewer__btn--save.is-active{
+  background:rgba(110,170,255,.32);
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__tag{
+  background:rgba(24,36,68,.08);
+}
+
+.publication-viewer.is-day .publication-comment__body{
+  background:rgba(24,36,68,.08);
+}
+
+.publication-viewer.is-day .publication-comment__badge{
+  background:rgba(78,168,255,.2);
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__input{
+  background:rgba(24,36,68,.08);
+  border-color:rgba(24,36,68,.12);
+  color:#1f2937;
+}
+
+.publication-viewer.is-day .publication-viewer__input:focus{
+  background:rgba(24,36,68,.12);
+}
+
+.publication-viewer.is-day .publication-viewer__form button{
+  background:rgba(78,168,255,.28);
+  color:#1f2937;
 }
 
 .composer-panel{
@@ -417,3 +781,45 @@
   color:#b4233c;
   border-color:rgba(255,115,140,.28);
 }
+
+/* ===== Confirm dialog (reutiliza variables del compositor) ===== */
+.confirm-backdrop{ z-index: 1100; }
+.confirm-modal{
+  width: min(420px, 96vw);
+  border-radius: 22px;
+  background: var(--composer-panel);
+  border: 1px solid var(--composer-border);
+  box-shadow: 0 24px 64px rgba(0,0,0,.35);
+  padding: 22px 22px 18px;
+  color: #fff;
+  transform: translateY(18px) scale(.98);
+  opacity: 0;
+  transition: transform .25s ease, opacity .25s ease;
+}
+.confirm-backdrop.is-visible .confirm-modal{ transform: translateY(0) scale(1); opacity: 1; }
+.confirm-backdrop.is-day .confirm-modal{
+  background: var(--composer-panel-day);
+  border: 1px solid var(--composer-border-day);
+  color: #1f2937;
+  box-shadow: 0 20px 40px rgba(24,38,70,.08);
+}
+.confirm-icon{ font-size: 28px; line-height: 1; }
+.confirm-title{ margin: 8px 0 6px; font-size: 18px; }
+.confirm-message{ margin: 0 0 14px; font-size: 14px; opacity: .88; }
+.confirm-actions{ display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-actions .btn-cancel,
+.confirm-actions .btn-confirm{
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirm-actions .btn-cancel{
+  background: rgba(255,255,255,.16);
+  color: inherit;
+}
+.confirm-actions .btn-confirm{ background: linear-gradient(135deg,#ff6b6b,#f43f5e); color: #fff; }
+.confirm-actions .btn-confirm.is-danger{ background: linear-gradient(135deg,#ff6b6b,#f43f5e); }
+.confirm-backdrop.is-day .confirm-actions .btn-cancel{ background: rgba(24,36,68,.08); color: #1f2937; }
+.confirm-backdrop.is-day .confirm-actions .btn-confirm{ color: #fff; }

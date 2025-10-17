@@ -11,6 +11,15 @@ const adjustmentsSchema = new Schema(
   { _id: false }
 );
 
+const commentSchema = new Schema(
+  {
+    user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    text: { type: String, required: true, trim: true },
+    createdAt: { type: Date, default: Date.now }
+  },
+  { _id: true }
+);
+
 const publicationSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -20,6 +29,9 @@ const publicationSchema = new Schema(
     filter: { type: String, trim: true },
     adjustments: { type: adjustmentsSchema, default: () => ({}) },
     likes: { type: Number, default: 0 },
+    likedBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    comments: { type: [commentSchema], default: () => [] },
+    savedBy: [{ type: Schema.Types.ObjectId, ref: "User" }],
     visibility: { type: String, enum: ["public", "friends", "private"], default: "public" }
   },
   { timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" } }

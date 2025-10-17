@@ -312,7 +312,10 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   opacity:0;
   transition:opacity .3s ease;
   display:flex;
-  align-items:flex-end;
+  flex-direction:column;
+  justify-content:flex-end;
+  align-items:flex-start;
+  gap:10px;
   padding:18px;
 }
 
@@ -320,6 +323,13 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   display:flex;
   gap:12px;
   font-weight:600;
+}
+
+.profile-card__owner{
+  font-size:12px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  opacity:.8;
 }
 
 .profile-card:hover{
@@ -348,6 +358,11 @@ body.theme-day .profile-empty{
   background:rgba(255,255,255,.85);
   border-color:rgba(31,41,55,.12);
   color:#415278;
+}
+
+body.theme-day .profile-card__owner{
+  color:#1f2937;
+  opacity:.75;
 }
 
 .icon-grid{

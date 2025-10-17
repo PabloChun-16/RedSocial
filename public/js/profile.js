@@ -54,6 +54,7 @@
 
   const els = {};
   let shell = null;
+  let publicationUpdatedHandler = null;
 
   function setRefs(){
     els.heroAvatar = document.getElementById("profile-hero-avatar");
@@ -101,22 +102,107 @@
     return "";
   }
 
-  function sanitizePublicationForClient(publication = {}){
-    const normalizedImage = normalizeAssetPath(publication.image || "", "posts");
-    const owner = publication.owner
+  function sanitizePublicationForClient(publication = {}, previous = null){
+    if(window.publicationViewer?.normalize){
+      return window.publicationViewer.normalize(publication, previous || undefined);
+    }
+    const normalizedImage =
+      normalizeAssetPath(publication.image || previous?.image || "", "posts") ||
+      previous?.image ||
+      "/media/iconobase.png";
+    const ownerSource = publication.owner || previous?.owner;
+    const owner = ownerSource
       ? {
-          ...publication.owner,
-          image: normalizeAssetPath(publication.owner.image || "", "avatars") || AVATAR_DEFAULT
+          ...ownerSource,
+          image: normalizeAssetPath(ownerSource.image || "", "avatars") || AVATAR_DEFAULT
         }
       : null;
+    const commentsSource = Array.isArray(publication.comments)
+      ? publication.comments
+      : Array.isArray(previous?.comments)
+      ? previous.comments
+      : [];
     return {
+      ...previous,
       ...publication,
-      image: normalizedImage || "/media/iconobase.png",
+      image: normalizedImage,
       owner,
-      likes: publication.likes ?? 0,
-      tags: Array.isArray(publication.tags) ? publication.tags : [],
-      adjustments: { ...DEFAULT_ADJUSTMENTS, ...(publication.adjustments || {}) }
+      likes:
+        typeof publication.likes === "number"
+          ? publication.likes
+          : typeof previous?.likes === "number"
+          ? previous.likes
+          : 0,
+      liked:
+        typeof publication.liked === "boolean"
+          ? publication.liked
+          : typeof previous?.liked === "boolean"
+          ? previous.liked
+          : false,
+      saved:
+        typeof publication.saved === "boolean"
+          ? publication.saved
+          : typeof previous?.saved === "boolean"
+          ? previous.saved
+          : false,
+      tags: Array.isArray(publication.tags) ? publication.tags : previous?.tags || [],
+      comments: commentsSource,
+      commentsCount:
+        typeof publication.commentsCount === "number"
+          ? publication.commentsCount
+          : commentsSource.length,
+      adjustments: {
+        ...DEFAULT_ADJUSTMENTS,
+        ...(previous?.adjustments || {}),
+        ...(publication.adjustments || {})
+      }
     };
+  }
+
+  function setCollection(key, items){
+    if(!Array.isArray(items)){
+      state.collections[key] = [];
+      return;
+    }
+    state.collections[key] = items.map((item) => sanitizePublicationForClient(item));
+  }
+
+  function updateCollectionItem(key, publication, { prepend = true } = {}){
+    if(!publication || !state.collections[key]) return null;
+    const id = publication.id ?? publication._id?.toString?.();
+    if(!id) return null;
+    const collection = state.collections[key];
+    const index = collection.findIndex((item) => item.id === id);
+    const current = index !== -1 ? collection[index] : null;
+    const normalized = sanitizePublicationForClient(publication, current || undefined);
+    if(index !== -1){
+      collection[index] = normalized;
+    }else if(prepend){
+      collection.unshift(normalized);
+    }else{
+      collection.push(normalized);
+    }
+    return normalized;
+  }
+
+  function removeFromCollection(key, id){
+    if(!id || !Array.isArray(state.collections[key])) return;
+    const collection = state.collections[key];
+    const index = collection.findIndex((item) => item.id === id);
+    if(index !== -1){
+      collection.splice(index, 1);
+    }
+  }
+
+  function findPublication(id){
+    if(!id) return null;
+    for(const key of Object.keys(state.collections)){
+      const collection = state.collections[key];
+      if(!Array.isArray(collection)) continue;
+      const match = collection.find((item) => item.id === id);
+      if(match) return match;
+    }
+    return null;
   }
 
   function attachAvatarFallback(img){
@@ -187,6 +273,9 @@
   }
 
   function buildFilterCss(publication){
+    if(window.publicationViewer?.buildFilterCss){
+      return window.publicationViewer.buildFilterCss(publication);
+    }
     const filterDef = FILTERS.find((f) => f.id === publication.filter) || FILTERS[0];
     const adjustments = { ...DEFAULT_ADJUSTMENTS, ...(publication.adjustments || {}) };
     const warmthDeg = adjustments.warmth || 0;
@@ -212,29 +301,67 @@
       key === "posts" ? "Publicaciones" : key === "saved" ? "Guardados" : "Etiquetas";
 
     els.gallery.innerHTML = "";
+    const isSavedTab = key === "saved";
+
     if(dataset.length === 0){
       els.gallery.hidden = true;
       els.galleryEmpty.hidden = false;
       els.galleryEmpty.style.display = "";
+      const title = els.galleryEmpty.querySelector("h3");
+      const description = els.galleryEmpty.querySelector("p");
+      if(isSavedTab){
+        if(title) title.textContent = "Aún no guardas publicaciones";
+        if(description){
+          description.textContent =
+            "Cuando guardes contenido de otros creadores aparecerá aquí para que lo revises más tarde.";
+        }
+        if(els.galleryEmptyCta){
+          els.galleryEmptyCta.style.display = "none";
+        }
+      }else{
+        if(title) title.textContent = "Aún no hay nada por aquí";
+        if(description){
+          description.textContent =
+            "Comparte tu primer momento y muestra a tu comunidad lo que te inspira.";
+        }
+        if(els.galleryEmptyCta){
+          els.galleryEmptyCta.style.display = "";
+        }
+      }
       return;
     }
 
     els.gallery.hidden = false;
     els.galleryEmpty.hidden = true;
     els.galleryEmpty.style.display = "none";
+    if(els.galleryEmptyCta){
+      els.galleryEmptyCta.style.display = isSavedTab ? "none" : "";
+    }
 
     dataset.forEach((item) => {
       const card = document.createElement("article");
       card.className = "profile-card";
       card.dataset.id = item.id;
       const imageSrc = normalizeAssetPath(item.image, "posts") || "/media/iconobase.png";
+      const commentsCount =
+        typeof item.commentsCount === "number"
+          ? item.commentsCount
+          : Array.isArray(item.comments)
+          ? item.comments.length
+          : 0;
+      const ownerNick = item.owner?.nick ? `@${item.owner.nick}` : (item.owner?.name || "");
+      const ownerLabel =
+        isSavedTab && ownerNick
+          ? `<span class="profile-card__owner">De ${ownerNick}</span>`
+          : "";
       card.innerHTML = `
         <img src="${imageSrc}" alt="${item.caption || "Publicación"}" loading="lazy" />
         <div class="profile-card__overlay">
           <div class="profile-card__meta">
             <span>♥ ${formatNumber(item.likes || 0)}</span>
-            <span>🏷 ${item.tags?.length || 0}</span>
+            <span>💬 ${formatNumber(commentsCount)}</span>
           </div>
+          ${ownerLabel}
         </div>
       `;
       card.addEventListener("click", () => openPublicationModal(item.id));
@@ -337,77 +464,45 @@
     const token = localStorage.getItem("token");
     if(!token) return;
     try{
-      const res = await fetch("/api/publication/user/me", {
-        headers: { Authorization: token }
-      });
-      const data = await res.json().catch(() => ({}));
-      if(!res.ok){
-        throw new Error(data?.message || `Error ${res.status} al cargar publicaciones`);
+      const [ownRes, savedRes] = await Promise.all([
+        fetch("/api/publication/user/me", {
+          headers: { Authorization: token }
+        }),
+        fetch("/api/publication/saved", {
+          headers: { Authorization: token }
+        })
+      ]);
+
+      const ownData = await ownRes.json().catch(() => ({}));
+      if(!ownRes.ok){
+        throw new Error(ownData?.message || `Error ${ownRes.status} al cargar publicaciones`);
       }
-      state.collections.posts = Array.isArray(data.items)
-        ? data.items.map(sanitizePublicationForClient)
-        : [];
-      state.collections.saved = [];
-      state.collections.tagged = [];
-      if(els.postsCount) els.postsCount.textContent = state.collections.posts.length.toString();
+      setCollection("posts", Array.isArray(ownData.items) ? ownData.items : []);
+      state.collections.tagged = state.collections.tagged || [];
+
+      let savedItems = [];
+      if(savedRes.ok){
+        const savedData = await savedRes.json().catch(() => ({}));
+        savedItems = Array.isArray(savedData.items) ? savedData.items : [];
+      }
+      setCollection("saved", savedItems);
+
+      if(els.postsCount){
+        els.postsCount.textContent = state.collections.posts.length.toString();
+      }
       renderGallery(state.currentTab);
     }catch(error){
       console.error(error);
     }
   }
 
-  async function openPublicationModal(id){
-    try{
-      const token = localStorage.getItem("token");
-      if(!token) return;
-      const res = await fetch(`/api/publication/${id}`, {
-        headers: { Authorization: token }
-      });
-      const data = await res.json().catch(() => ({}));
-      if(!res.ok) throw new Error(data?.message || "No se pudo abrir la publicación");
-      showPublicationDetail(data.publication);
-    }catch(error){
-      console.error(error);
-      alert(error.message || "No se pudo cargar la publicación");
+  function openPublicationModal(id){
+    if(!window.publicationViewer) return;
+    const found = findPublication(id);
+    if(found){
+      window.publicationViewer.open(found);
     }
-  }
-
-  function showPublicationDetail(publication){
-    if(!publication) return;
-    const normalized = sanitizePublicationForClient(publication);
-    const overlay = document.createElement("div");
-    overlay.className = "composer-backdrop is-visible";
-    overlay.innerHTML = `
-      <div class="composer-modal" style="max-width:900px;">
-        <div class="composer-preview" style="background:rgba(0,0,0,.6);">
-          <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${buildFilterCss(normalized)}" />
-        </div>
-        <div class="composer-panel" style="padding:26px;">
-          <header class="composer-head">
-            <h2>${normalized.owner?.nick ? `@${normalized.owner.nick}` : "Publicación"}</h2>
-            <button type="button" class="composer-close">×</button>
-          </header>
-          <p>${normalized.caption || "Sin descripción"}</p>
-          <div class="hero-meta">
-            <span>${new Date(normalized.createdAt).toLocaleString()}</span>
-            <span>${normalized.tags?.length || 0} etiquetas</span>
-          </div>
-          <div class="composer-tags">
-            ${
-              normalized.tags?.length
-                ? normalized.tags.map((tag) => `<span>#${tag}</span>`).join(" ")
-                : "<em>Sin etiquetas</em>"
-            }
-          </div>
-        </div>
-      </div>
-    `;
-    overlay.addEventListener("click", (event) => {
-      if(event.target === overlay || event.target.classList.contains("composer-close")){
-        overlay.remove();
-      }
-    });
-    document.body.appendChild(overlay);
+    window.publicationViewer.openById(id);
   }
 
   function initProfile(appShell){
@@ -428,6 +523,38 @@
     if(currentUser){
       applyUser(currentUser);
     }
+
+    if(publicationUpdatedHandler){
+      document.removeEventListener("publication:updated", publicationUpdatedHandler);
+    }
+    publicationUpdatedHandler = (event) => {
+      const publication = event.detail;
+      if(!publication?.id) return;
+      const normalized = sanitizePublicationForClient(publication);
+      const currentUserId = shell?.getUser?.()?.id;
+      const isOwn =
+        normalized.owner?.id && currentUserId && normalized.owner.id === currentUserId;
+
+      if(isOwn){
+        updateCollectionItem("posts", normalized, { prepend: true });
+        if(els.postsCount){
+          els.postsCount.textContent = state.collections.posts.length.toString();
+        }
+      }
+
+      if(typeof normalized.saved === "boolean"){
+        if(normalized.saved){
+          updateCollectionItem("saved", normalized, { prepend: true });
+        }else{
+          removeFromCollection("saved", normalized.id);
+        }
+      }
+
+      if((isOwn && state.currentTab === "posts") || state.currentTab === "saved"){
+        renderGallery(state.currentTab);
+      }
+    };
+    document.addEventListener("publication:updated", publicationUpdatedHandler);
 
     initHighlights();
     initTabs();
@@ -453,9 +580,12 @@
 
   if(window.postComposer){
     window.postComposer.registerListener((publication) => {
-      if(publication?.isOwn){
-        state.collections.posts.unshift(sanitizePublicationForClient(publication));
-        if(els.postsCount) els.postsCount.textContent = state.collections.posts.length.toString();
+      if(!publication?.isOwn) return;
+      updateCollectionItem("posts", publication, { prepend: true });
+      if(els.postsCount){
+        els.postsCount.textContent = state.collections.posts.length.toString();
+      }
+      if(state.currentTab === "posts"){
         renderGallery(state.currentTab);
       }
     });

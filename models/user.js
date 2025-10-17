@@ -1,6 +1,18 @@
 const { Schema, model } = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
 
+const notificationSchema = new Schema(
+  {
+    type: { type: String, enum: ["like", "comment"], required: true },
+    actor: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    publication: { type: Schema.Types.ObjectId, ref: "Publication", required: true },
+    message: { type: String, trim: true },
+    isRead: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+  },
+  { _id: true }
+);
+
 const userSchema = new Schema({
   name: {
     type: String,
@@ -39,7 +51,11 @@ const userSchema = new Schema({
   },
   image: {
     type: String,
-    default: "default.png"
+    default: "iconobase.png"
+  },
+  notifications: {
+    type: [notificationSchema],
+    default: () => []
   },
   created_at: {
     type: Date,

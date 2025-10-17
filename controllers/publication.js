@@ -1,7 +1,9 @@
 const path = require("path");
 const Publication = require("../models/publication");
+const User = require("../models/user");
 
 const PUBLIC_ROOT = path.join(__dirname, "..", "public");
+const MAX_NOTIFICATIONS = 50;
 
 const DEFAULT_ADJUSTMENTS = {
   brightness: 1,
@@ -11,17 +13,29 @@ const DEFAULT_ADJUSTMENTS = {
   fade: 0
 };
 
-const sanitizePublication = (doc, currentUserId) => {
+const normalizeUserRef = (value) => {
+  if(!value) return null;
+  const source =
+    typeof value.toObject === "function" ? value.toObject({ virtuals: false }) : value;
+  if(typeof source === "string"){
+    return { id: source };
+  }
+  if(typeof source === "object" && source !== null){
+    const id = source._id?.toString?.() ?? source.id ?? value?.toString?.();
+    return {
+      id,
+      nick: source.nick,
+      name: source.name,
+      image: source.image
+    };
+  }
+  return null;
+};
+
+const sanitizePublication = (doc, currentUserId, options = {}) => {
   if (!doc) return null;
   const data = typeof doc.toObject === "function" ? doc.toObject({ virtuals: false }) : doc;
-  const owner = data.user && typeof data.user === "object"
-    ? {
-        id: data.user._id?.toString() ?? data.user.id,
-        nick: data.user.nick,
-        name: data.user.name,
-        image: data.user.image
-      }
-    : { id: data.user?.toString?.() ?? data.user };
+  const owner = normalizeUserRef(data.user) ?? { id: data.user?.toString?.() ?? data.user };
 
   const relativeImage =
     typeof data.image === "string"
@@ -30,19 +44,87 @@ const sanitizePublication = (doc, currentUserId) => {
         : `/${data.image}`
       : null;
 
-  return {
+  const likedBy = Array.isArray(data.likedBy)
+    ? data.likedBy.map((item) => item?.toString?.() ?? item)
+    : [];
+  const savedBy = Array.isArray(data.savedBy)
+    ? data.savedBy.map((item) => item?.toString?.() ?? item)
+    : [];
+  const commentsRaw = Array.isArray(data.comments) ? data.comments : [];
+  const includeComments = Boolean(options.includeComments);
+  const normalizedComments = includeComments
+    ? commentsRaw.map((comment) => {
+        const commentAuthor = normalizeUserRef(comment.user);
+        return {
+          id: comment._id?.toString() ?? comment.id,
+          text: comment.text || "",
+          createdAt: comment.createdAt,
+          author: commentAuthor,
+          isCreator: commentAuthor?.id && owner?.id && commentAuthor.id === owner.id
+        };
+      })
+    : undefined;
+
+  const likesCount =
+    typeof data.likes === "number" && data.likes >= 0 ? data.likes : likedBy.length;
+
+  const result = {
     id: data._id?.toString() ?? data.id,
     image: relativeImage,
     caption: data.caption || "",
     tags: Array.isArray(data.tags) ? data.tags : [],
     filter: data.filter || "original",
     adjustments: { ...DEFAULT_ADJUSTMENTS, ...(data.adjustments || {}) },
-    likes: data.likes || 0,
+    likes: likesCount,
+    liked: likedBy.includes(currentUserId),
+    saved: savedBy.includes(currentUserId),
+    commentsCount: commentsRaw.length,
     visibility: data.visibility || "public",
     createdAt: data.createdAt,
     owner,
     isOwn: owner.id === currentUserId
   };
+  if(includeComments){
+    result.comments = normalizedComments || [];
+  }
+  return result;
+};
+
+const pushNotification = async ({ targetUserId, type, actorId, actorName, actorNick, publicationId, message }) => {
+  if(!targetUserId || !actorId || targetUserId === actorId) return;
+  const baseMessage =
+    message ||
+    (type === "like"
+      ? `${actorNick || actorName || "Alguien"} le dio like a tu publicación`
+      : `${actorNick || actorName || "Alguien"} comentó tu publicación`);
+
+  try{
+    await User.findByIdAndUpdate(
+      targetUserId,
+      {
+        $push: {
+          notifications: {
+            $each: [
+              {
+                type,
+                actor: actorId,
+                publication: publicationId,
+                message: baseMessage,
+                isRead: false,
+                createdAt: new Date()
+              }
+            ],
+            $position: 0,
+            $slice: MAX_NOTIFICATIONS
+          }
+        }
+      },
+      { new: false }
+    ).exec();
+  }catch(error){
+    // No romper el flujo si falla la notificación
+    console.warn("No se pudo crear la notificación", error.message);
+  }
 };
 
 const parseTags = (raw = "") =>
@@ -177,6 +259,7 @@ const getPublication = async (req, res) => {
     const { id } = req.params;
     const publication = await Publication.findById(id)
       .populate("user", "nick name image")
+      .populate("comments.user", "nick name image")
       .exec();
 
     if (!publication) {
@@ -188,7 +271,7 @@ const getPublication = async (req, res) => {
 
     return res.status(200).json({
       status: "success",
-      publication: sanitizePublication(publication, req.user.id)
+      publication: sanitizePublication(publication, req.user.id, { includeComments: true })
     });
   } catch (error) {
     return res.status(500).json({
@@ -199,10 +282,327 @@ const getPublication = async (req, res) => {
   }
 };
 
+const likePublication = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try{
+    const publication = await Publication.findById(id)
+      .populate("user", "nick name image")
+      .exec();
+
+    if(!publication){
+      return res.status(404).json({
+        status: "error",
+        message: "Publicación no encontrada"
+      });
+    }
+
+    if(!Array.isArray(publication.likedBy)){
+      publication.likedBy = [];
+    }
+
+    const alreadyLiked = publication.likedBy.some(
+      (liker) => liker?.toString?.() === userId
+    );
+    if(!alreadyLiked){
+      publication.likedBy.push(userId);
+      publication.likes = publication.likedBy.length;
+      await publication.save();
+
+      const ownerId = publication.user?._id?.toString?.() ?? publication.user?.toString?.();
+      await pushNotification({
+        targetUserId: ownerId,
+        type: "like",
+        actorId: userId,
+        actorName: req.user.name,
+        actorNick: req.user.nick,
+        publicationId: publication._id
+      });
+    }
+
+    const normalized = sanitizePublication(publication, userId);
+    return res.status(200).json({
+      status: "success",
+      publication: normalized
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo registrar el like",
+      error: error.message
+    });
+  }
+};
+
+const unlikePublication = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try{
+    const publication = await Publication.findById(id)
+      .populate("user", "nick name image")
+      .exec();
+
+    if(!publication){
+      return res.status(404).json({
+        status: "error",
+        message: "Publicación no encontrada"
+      });
+    }
+
+    if(!Array.isArray(publication.likedBy)){
+      publication.likedBy = [];
+    }
+
+    const prevLength = publication.likedBy.length;
+    publication.likedBy = publication.likedBy.filter(
+      (liker) => liker?.toString?.() !== userId
+    );
+    if(publication.likedBy.length !== prevLength){
+      publication.likes = Math.max(0, publication.likedBy.length);
+      await publication.save();
+    }
+
+    const normalized = sanitizePublication(publication, userId);
+    return res.status(200).json({
+      status: "success",
+      publication: normalized
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo quitar el like",
+      error: error.message
+    });
+  }
+};
+
+const addComment = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  const rawText = req.body?.text ?? req.body?.comment ?? "";
+  const text = typeof rawText === "string" ? rawText.trim() : "";
+
+  if(!text){
+    return res.status(400).json({
+      status: "error",
+      message: "Debes escribir un comentario"
+    });
+  }
+  if(text.length > 500){
+    return res.status(400).json({
+      status: "error",
+      message: "El comentario no puede superar los 500 caracteres"
+    });
+  }
+
+  try{
+    const publication = await Publication.findById(id)
+      .populate("user", "nick name image")
+      .populate("comments.user", "nick name image")
+      .exec();
+
+    if(!publication){
+      return res.status(404).json({
+        status: "error",
+        message: "Publicación no encontrada"
+      });
+    }
+
+    if(!Array.isArray(publication.comments)){
+      publication.comments = [];
+    }
+
+    publication.comments.push({
+      user: userId,
+      text,
+      createdAt: new Date()
+    });
+
+    await publication.save();
+    await publication.populate("comments.user", "nick name image");
+
+    const normalized = sanitizePublication(publication, userId, { includeComments: true });
+
+    const ownerId = publication.user?._id?.toString?.() ?? publication.user?.toString?.();
+    const preview = text.length > 80 ? `${text.slice(0, 77)}…` : text;
+    await pushNotification({
+      targetUserId: ownerId,
+      type: "comment",
+      actorId: userId,
+      actorName: req.user.name,
+      actorNick: req.user.nick,
+      publicationId: publication._id,
+      message: `${req.user.nick || req.user.name || "Alguien"} comentó: ${preview}`
+    });
+
+    return res.status(201).json({
+      status: "success",
+      publication: normalized
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo agregar el comentario",
+      error: error.message
+    });
+  }
+};
+
+const listSavedPublications = async (req, res) => {
+  try{
+    const posts = await Publication.find({
+      savedBy: req.user.id
+    })
+      .populate("user", "nick name image")
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return res.status(200).json({
+      status: "success",
+      items: posts.map((pub) => sanitizePublication(pub, req.user.id))
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo obtener la lista de guardados",
+      error: error.message
+    });
+  }
+};
+
+const savePublication = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try{
+    const publication = await Publication.findById(id)
+      .populate("user", "nick name image")
+      .exec();
+
+    if(!publication){
+      return res.status(404).json({
+        status: "error",
+        message: "Publicación no encontrada"
+      });
+    }
+
+    if(!Array.isArray(publication.savedBy)){
+      publication.savedBy = [];
+    }
+
+    const alreadySaved = publication.savedBy.some(
+      (saved) => saved?.toString?.() === userId
+    );
+    if(!alreadySaved){
+      publication.savedBy.push(userId);
+      await publication.save();
+    }
+
+    const normalized = sanitizePublication(publication, userId);
+    return res.status(200).json({
+      status: "success",
+      publication: normalized
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo guardar la publicación",
+      error: error.message
+    });
+  }
+};
+
+const unsavePublication = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try{
+    const publication = await Publication.findById(id)
+      .populate("user", "nick name image")
+      .exec();
+
+    if(!publication){
+      return res.status(404).json({
+        status: "error",
+        message: "Publicación no encontrada"
+      });
+    }
+
+    if(!Array.isArray(publication.savedBy)){
+      publication.savedBy = [];
+    }
+
+    const prevLength = publication.savedBy.length;
+    publication.savedBy = publication.savedBy.filter(
+      (saved) => saved?.toString?.() !== userId
+    );
+    if(publication.savedBy.length !== prevLength){
+      await publication.save();
+    }
+
+    const normalized = sanitizePublication(publication, userId);
+    return res.status(200).json({
+      status: "success",
+      publication: normalized
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo quitar de guardados",
+      error: error.message
+    });
+  }
+};
+
+const deletePublication = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+  try {
+    const publication = await Publication.findById(id).exec();
+    if (!publication) {
+      return res.status(404).json({ status: "error", message: "Publicación no encontrada" });
+    }
+
+    const ownerId = publication.user?._id?.toString?.() ?? publication.user?.toString?.();
+    if (ownerId !== userId) {
+      return res.status(403).json({ status: "error", message: "No tienes permiso para eliminar esta publicación" });
+    }
+
+    // Eliminar archivo asociado si existe
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const PUBLIC_ROOT = path.join(__dirname, "..", "public");
+      const imagePath = publication.image ? publication.image.replace(/^\//, "") : null;
+      if (imagePath) {
+        const absolute = path.join(PUBLIC_ROOT, imagePath);
+        if (fs.existsSync(absolute)) {
+          fs.unlinkSync(absolute);
+        }
+      }
+    } catch (err) {
+      // No bloquear la eliminación en BD si falla borrar el archivo
+      console.warn("No se pudo eliminar el archivo de la publicación:", err.message);
+    }
+
+    await Publication.deleteOne({ _id: id }).exec();
+
+    return res.status(200).json({ status: "success", message: "Publicación eliminada" });
+  } catch (error) {
+    return res.status(500).json({ status: "error", message: "No se pudo eliminar la publicación", error: error.message });
+  }
+};
+
 module.exports = {
   pruebaPublication,
   createPublication,
   listFeed,
   listByUser,
-  getPublication
+  getPublication,
+  likePublication,
+  unlikePublication,
+  addComment,
+  listSavedPublications,
+  savePublication,
+  unsavePublication
+  ,
+  deletePublication
 };

@@ -96,19 +96,24 @@
         filter: "original",
         adjustments: { ...DEFAULT_ADJUSTMENTS }
       };
-    this.listeners = new Set();
-    this.token = () => localStorage.getItem("token");
-    this.user = () => {
-      try {
-        return JSON.parse(localStorage.getItem("user"));
-      } catch (err) {
-        return null;
-      }
-    };
-    this.hideTimeout = null;
-    this.buildModal();
-    this.registerGlobalTriggers();
-  }
+      this.listeners = new Set();
+      this.token = () => localStorage.getItem("token");
+      this.user = () => {
+        try {
+          return JSON.parse(localStorage.getItem("user"));
+        } catch (err) {
+          return null;
+        }
+      };
+      this.hideTimeout = null;
+      this.handleThemeChange = (event) => {
+        this.applyTheme(event?.detail);
+      };
+      this.buildModal();
+      this.registerGlobalTriggers();
+      this.applyTheme(window.appShell?.getTheme?.());
+      document.addEventListener("appshell:theme", this.handleThemeChange);
+    }
 
     buildModal() {
       this.backdrop = document.createElement("div");
@@ -321,17 +326,20 @@
     open() {
       const token = this.token();
       const user = this.user();
-      if (!token || !user) {
+      if(!token || !user){
         window.location.replace("/index.html");
         return;
       }
-    this.reset();
-    if(this.panel){ this.panel.scrollTop = 0; }
-    this.backdrop.style.display = "flex";
-    requestAnimationFrame(() => {
-      this.backdrop.classList.add("is-visible");
-    });
-  }
+      this.applyTheme(window.appShell?.getTheme?.());
+      this.reset();
+      if(this.panel){
+        this.panel.scrollTop = 0;
+      }
+      this.backdrop.style.display = "flex";
+      requestAnimationFrame(() => {
+        this.backdrop.classList.add("is-visible");
+      });
+    }
 
   close() {
     this.backdrop.classList.remove("is-visible");
@@ -354,6 +362,19 @@
     clearError() {
       this.errorBox.textContent = "";
       this.errorBox.classList.add("composer-hidden");
+    }
+
+    applyTheme(mode) {
+      if(!this.backdrop) return;
+      const inferred =
+        mode ||
+        window.appShell?.getTheme?.() ||
+        (document.body.classList.contains("theme-day") ? "day" : "night");
+      const isDay = inferred === "day";
+      this.backdrop.classList.toggle("is-day", isDay);
+      if(this.modal){
+        this.modal.classList.toggle("is-day", isDay);
+      }
     }
 
     async handleSubmit() {

@@ -36,5 +36,7 @@ const avatarMiddleware = (req, res, next) => {
 };
 
 router.put("/profile", auth, avatarMiddleware, UserController.updateProfile);
+router.get("/notifications", auth, UserController.listNotifications);
+router.post("/notifications/read", auth, UserController.markNotificationsAsRead);
 
 module.exports = router;

@@ -44,7 +44,7 @@
     if(!value) return AVATAR_DEFAULT;
     const trimmed = value.trim();
     if(!trimmed) return AVATAR_DEFAULT;
-    if(trimmed === "default.png") return AVATAR_DEFAULT;
+    if(trimmed === "default.png" || trimmed.includes("iconobase")) return AVATAR_DEFAULT;
     if(/^https?:\/\//i.test(trimmed)) return trimmed;
     if(trimmed.startsWith("/")) return trimmed;
     if(trimmed.startsWith("./")) return normalizeAvatar(trimmed.slice(2));

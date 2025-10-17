@@ -64,6 +64,21 @@
             <span class="icon-moon">🌙</span>
             <span class="label">Modo</span>
           </button>
+          <div class="notify-block">
+            <button id="app-notify-toggle" class="notify-btn" type="button" aria-label="Notificaciones" aria-expanded="false">
+              <span class="icon icon-bell" aria-hidden="true"></span>
+              <span class="notify-count" id="app-notify-count" hidden>0</span>
+            </button>
+          <div class="notify-panel glass" id="app-notify-panel">
+              <header class="notify-panel__head">
+                <span>Notificaciones</span>
+                <button id="app-notify-mark" class="notify-mark" type="button">Marcar como leídas</button>
+              </header>
+              <div class="notify-panel__list" id="app-notify-list">
+                <p class="notify-empty">Aún no tienes notificaciones.</p>
+              </div>
+            </div>
+          </div>
           <div class="profile-block">
             <a class="profile-chip" id="app-profile-chip" href="/profile.html">
               <img id="app-profile-avatar" data-fallback="avatar" src="/media/iconobase.png" alt="Perfil" />
@@ -88,7 +103,10 @@
   const state = {
     page: body.dataset.page || "feed",
     theme: "day",
-    user: null
+    user: null,
+    notifications: [],
+    unread: 0,
+    notificationsOpen: false
   };
 
   const userListeners = new Set();
@@ -119,6 +137,209 @@
     return "";
   }
 
+  const relativeTime = typeof Intl !== "undefined" && Intl.RelativeTimeFormat
+    ? new Intl.RelativeTimeFormat("es", { numeric: "auto" })
+    : null;
+
+  function formatRelativeTime(value){
+    if(!value) return "";
+    const date = value instanceof Date ? value : new Date(value);
+    if(Number.isNaN(date?.getTime())) return "";
+    const diffMs = Date.now() - date.getTime();
+    const minutes = Math.round(diffMs / 60000);
+    if(relativeTime){
+      if(Math.abs(minutes) < 60){
+        return relativeTime.format(-minutes, "minute");
+      }
+      const hours = Math.round(diffMs / 3600000);
+      if(Math.abs(hours) < 24){
+        return relativeTime.format(-hours, "hour");
+      }
+      const days = Math.round(diffMs / 86400000);
+      if(Math.abs(days) < 7){
+        return relativeTime.format(-days, "day");
+      }
+    }
+    return date.toLocaleString();
+  }
+
+  function updateNotificationBadge(){
+    if(!refs?.notifyCount || !refs?.notifyToggle) return;
+    const unread = Number(state.unread) || 0;
+    refs.notifyCount.textContent = unread.toString();
+    refs.notifyCount.hidden = unread < 1;
+    refs.notifyToggle.classList.toggle("has-unread", unread > 0);
+  }
+
+  function renderNotifications(){
+    if(!refs?.notifyList) return;
+    const list = refs.notifyList;
+    list.innerHTML = "";
+    const notifications = Array.isArray(state.notifications) ? state.notifications : [];
+    if(!notifications.length){
+      const empty = document.createElement("p");
+      empty.className = "notify-empty";
+      empty.textContent = "Aún no tienes notificaciones.";
+      list.appendChild(empty);
+      refs.notifyMark?.setAttribute("disabled", "true");
+      return;
+    }
+    refs.notifyMark?.removeAttribute("disabled");
+    const fragment = document.createDocumentFragment();
+    notifications.forEach((item) => {
+      if(!item) return;
+      const actorName = item.actor?.nick ? `@${item.actor.nick}` : (item.actor?.name || "Alguien");
+      const avatarUrl =
+        normalizeAssetPath(item.actor?.image || "", "avatars") || "/media/iconobase.png";
+      const ownerNick = item.publication?.owner?.nick
+        ? `@${item.publication.owner.nick}`
+        : "";
+      const previewImage = normalizeAssetPath(item.publication?.image || "", "posts");
+      const entry = document.createElement("article");
+      entry.className = `notify-item${item.isRead ? "" : " is-unread"}`;
+
+      const avatarWrap = document.createElement("div");
+      avatarWrap.className = "notify-item__avatar";
+      const avatarImg = document.createElement("img");
+      avatarImg.src = avatarUrl;
+      avatarImg.alt = actorName;
+      avatarImg.dataset.fallback = "avatar";
+      avatarWrap.appendChild(avatarImg);
+      attachAvatarFallback(avatarImg);
+
+      const bodyWrap = document.createElement("div");
+      bodyWrap.className = "notify-item__body";
+      const messageEl = document.createElement("p");
+      messageEl.className = "notify-item__message";
+      messageEl.textContent = item.message || "";
+      bodyWrap.appendChild(messageEl);
+
+      const meta = document.createElement("div");
+      meta.className = "notify-item__meta";
+      const timeEl = document.createElement("span");
+      timeEl.textContent = formatRelativeTime(item.createdAt) || "";
+      meta.appendChild(timeEl);
+      if(ownerNick){
+        const ownerEl = document.createElement("span");
+        ownerEl.textContent = `· ${ownerNick}`;
+        meta.appendChild(ownerEl);
+      }
+      bodyWrap.appendChild(meta);
+
+      entry.appendChild(avatarWrap);
+      entry.appendChild(bodyWrap);
+
+      if(previewImage){
+        const thumb = document.createElement("img");
+        thumb.className = "notify-item__thumb";
+        thumb.src = previewImage;
+        thumb.alt = "Vista previa";
+        entry.appendChild(thumb);
+      }
+
+      if(item.publication?.id){
+        entry.addEventListener("click", () => {
+          toggleNotificationsPanel(false);
+          window.publicationViewer?.openById(item.publication.id);
+        });
+      }
+      fragment.appendChild(entry);
+    });
+    list.appendChild(fragment);
+  }
+
+  function setNotifications(items, unread){
+    state.notifications = Array.isArray(items) ? items : [];
+    const computedUnread =
+      typeof unread === "number"
+        ? unread
+        : state.notifications.filter((item) => item && !item.isRead).length;
+    state.unread = computedUnread;
+    renderNotifications();
+    updateNotificationBadge();
+  }
+
+  async function loadNotifications(){
+    const token = localStorage.getItem("token");
+    if(!token) return;
+    try{
+      const res = await fetch("/api/user/notifications", {
+        headers: { Authorization: token }
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw new Error(data?.message || "No se pudieron cargar las notificaciones");
+      }
+      setNotifications(data.items || [], typeof data.unread === "number" ? data.unread : undefined);
+      if(state.notificationsOpen && state.unread){
+        markNotificationsAsRead();
+      }
+    }catch(error){
+      console.warn(error.message || "Error al cargar notificaciones");
+    }
+  }
+
+  async function markNotificationsAsRead(ids){
+    if(!state.unread) return;
+    const token = localStorage.getItem("token");
+    if(!token) return;
+    try{
+      const body =
+        Array.isArray(ids) && ids.length
+          ? JSON.stringify({ ids })
+          : JSON.stringify({});
+      const res = await fetch("/api/user/notifications/read", {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json"
+        },
+        body
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw new Error(data?.message || "No se pudieron marcar como leídas");
+      }
+      if(Array.isArray(state.notifications)){
+        state.notifications = state.notifications.map((item) =>
+          item ? { ...item, isRead: true } : item
+        );
+      }
+      state.unread = 0;
+      renderNotifications();
+      updateNotificationBadge();
+    }catch(error){
+      console.warn(error.message || "Error al marcar notificaciones");
+    }
+  }
+
+  function handleNotificationsOutsideClick(event){
+    if(!state.notificationsOpen) return;
+    const isToggle = refs.notifyToggle?.contains(event.target);
+    const isInside = refs.notifyPanel.contains(event.target);
+    if(isToggle || isInside) return;
+    toggleNotificationsPanel(false);
+  }
+
+  function toggleNotificationsPanel(force){
+    if(!refs?.notifyPanel || !refs?.notifyToggle) return;
+    const isOpen = state.notificationsOpen;
+    const nextState = typeof force === "boolean" ? force : !isOpen;
+    state.notificationsOpen = nextState;
+    if(refs.notifyPanel){
+      refs.notifyPanel.setAttribute("aria-hidden", nextState ? "false" : "true");
+    }
+    refs.notifyToggle.setAttribute("aria-expanded", nextState ? "true" : "false");
+    refs.notifyToggle.classList.toggle("is-active", nextState);
+    refs.notifyPanel.classList.toggle("is-open", nextState);
+    if(nextState){
+      document.addEventListener("click", handleNotificationsOutsideClick, { capture: true });
+      loadNotifications();
+    }else{
+      document.removeEventListener("click", handleNotificationsOutsideClick, { capture: true });
+    }
+  }
+
   function attachAvatarFallback(img){
     if(!img) return;
     const restore = () => {
@@ -138,6 +359,7 @@
     body.classList.toggle("theme-day", next === "day");
     body.classList.toggle("theme-night", next === "night");
     localStorage.setItem(THEME_KEY, next);
+    document.dispatchEvent(new CustomEvent("appshell:theme", { detail: next }));
   }
 
   function toggleTheme(){
@@ -244,21 +466,42 @@
       sidebarAvatar: root.querySelector("#app-sidebar-avatar"),
       logoutBtn: root.querySelector("#app-logout-btn"),
       fab: root.querySelector(".fab"),
-      sidebarLinks: Array.from(root.querySelectorAll("[data-page-target]"))
+      sidebarLinks: Array.from(root.querySelectorAll("[data-page-target]")),
+      notifyToggle: root.querySelector("#app-notify-toggle"),
+      notifyPanel: root.querySelector("#app-notify-panel"),
+      notifyList: root.querySelector("#app-notify-list"),
+      notifyCount: root.querySelector("#app-notify-count"),
+      notifyMark: root.querySelector("#app-notify-mark")
     };
     appShell.content = root.querySelector("#app-content");
 
     attachAvatarFallback(refs.profileAvatar);
     attachAvatarFallback(refs.sidebarAvatar);
 
+    if(refs.notifyPanel){
+      refs.notifyPanel.classList.remove("is-open");
+      refs.notifyPanel.setAttribute("aria-hidden", "true");
+    }
+
     refs.themeToggle?.addEventListener("click", toggleTheme);
     refs.logoutBtn?.addEventListener("click", handleLogout);
+    refs.notifyToggle?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleNotificationsPanel();
+    });
+    refs.notifyMark?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      markNotificationsAsRead();
+    });
 
     if(pageFragment && pageFragment.childNodes.length){
       appShell.content.appendChild(pageFragment);
     }
 
     setActiveSidebar(state.page);
+    renderNotifications();
+    updateNotificationBadge();
   }
 
   function collectPageContent(){
@@ -288,6 +531,7 @@
     }
 
     refreshUserFromApi();
+    loadNotifications();
     appShell.isReady = true;
     emitReady();
   }
@@ -310,6 +554,16 @@
       refs.fab.classList.toggle("is-hidden", visible === false);
     },
     setActiveSidebar,
+    getTheme(){
+      return state.theme;
+    },
+    getNotifications(){
+      return Array.isArray(state.notifications) ? [...state.notifications] : [];
+    },
+    refreshNotifications: loadNotifications,
+    markNotificationsAsRead(ids){
+      markNotificationsAsRead(ids);
+    },
     onUser(fn){
       if(typeof fn === "function"){
         userListeners.add(fn);
@@ -323,6 +577,15 @@
       state.user = user || null;
       if(persist && user){
         localStorage.setItem(USER_KEY, JSON.stringify(user));
+      }
+       if(user && typeof user.notificationsUnread === "number"){
+        state.unread = user.notificationsUnread;
+        updateNotificationBadge();
+      }else if(!user){
+        state.unread = 0;
+        state.notifications = [];
+        renderNotifications();
+        updateNotificationBadge();
       }
       updateUserUi(user);
       userListeners.forEach((listener) => {
