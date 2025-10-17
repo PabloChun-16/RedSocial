@@ -186,17 +186,20 @@
     }
     refs.notifyMark?.removeAttribute("disabled");
     const fragment = document.createDocumentFragment();
-    notifications.forEach((item) => {
-      if(!item) return;
-      const actorName = item.actor?.nick ? `@${item.actor.nick}` : (item.actor?.name || "Alguien");
-      const avatarUrl =
-        normalizeAssetPath(item.actor?.image || "", "avatars") || "/media/iconobase.png";
-      const ownerNick = item.publication?.owner?.nick
-        ? `@${item.publication.owner.nick}`
-        : "";
-      const previewImage = normalizeAssetPath(item.publication?.image || "", "posts");
-      const entry = document.createElement("article");
-      entry.className = `notify-item${item.isRead ? "" : " is-unread"}`;
+      notifications.forEach((item) => {
+        if(!item) return;
+        const actorName = item.actor?.nick ? `@${item.actor.nick}` : (item.actor?.name || "Alguien");
+        const avatarUrl =
+          normalizeAssetPath(item.actor?.image || "", "avatars") || "/media/iconobase.png";
+        const ownerNick = item.publication?.owner?.nick
+          ? `@${item.publication.owner.nick}`
+          : "";
+        const previewImage = normalizeAssetPath(item.publication?.image || "", "posts");
+        const previewFilter = item.publication
+          ? (window.publicationViewer?.buildFilterCss?.(item.publication) || "")
+          : "";
+        const entry = document.createElement("article");
+        entry.className = `notify-item${item.isRead ? "" : " is-unread"}`;
 
       const avatarWrap = document.createElement("div");
       avatarWrap.className = "notify-item__avatar";
@@ -234,6 +237,9 @@
         thumb.className = "notify-item__thumb";
         thumb.src = previewImage;
         thumb.alt = "Vista previa";
+        if(previewFilter){
+          thumb.style.filter = previewFilter;
+        }
         entry.appendChild(thumb);
       }
 

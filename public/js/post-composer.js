@@ -170,6 +170,33 @@
       });
     }
 
+    buildFilterCss(filterId, overrides = {}) {
+      const adjustments = {
+        ...DEFAULT_ADJUSTMENTS,
+        ...(this.state.adjustments || {}),
+        ...(overrides || {})
+      };
+      if (window.publicationViewer?.buildFilterCss) {
+        return window.publicationViewer.buildFilterCss({
+          filter: filterId,
+          adjustments
+        });
+      }
+      const filterDef = FILTERS.find((filter) => filter.id === filterId) || FILTERS[0];
+      const warmthDeg = adjustments.warmth || 0;
+      const fadeFactor = 1 - Math.min(Math.max(adjustments.fade || 0, 0), 1) * 0.15;
+      return [
+        `brightness(${adjustments.brightness || 1})`,
+        `contrast(${adjustments.contrast || 1})`,
+        `saturate(${adjustments.saturation || 1})`,
+        warmthDeg ? `hue-rotate(${warmthDeg}deg)` : "",
+        adjustments.fade ? `brightness(${fadeFactor})` : "",
+        filterDef.css
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
+
     renderFilters() {
       this.filtersContainer.innerHTML = "";
       FILTERS.forEach((filter) => {
@@ -177,9 +204,10 @@
         button.type = "button";
         button.className = `composer-filter${filter.id === this.state.filter ? " is-active" : ""}`;
         button.dataset.filter = filter.id;
+        const filterCss = this.buildFilterCss(filter.id) || "none";
         button.innerHTML = `
           <div class="composer-filter__preview">
-            <img src="${this.state.previewUrl || "/media/iconobase.png"}" alt="${filter.label}" style="filter:${filter.css};" />
+            <img src="${this.state.previewUrl || "/media/iconobase.png"}" alt="${filter.label}" style="filter:${filterCss};" />
           </div>
           <span>${filter.label}</span>
         `;
@@ -236,6 +264,7 @@
           if (Number.isNaN(value)) value = DEFAULT_ADJUSTMENTS[key] || 0;
           this.state.adjustments[key] = value;
           this.applyPreviewFilter();
+          this.renderFilters();
         });
       });
 
@@ -284,19 +313,7 @@
 
     applyPreviewFilter() {
       if (!this.previewImg) return;
-      const filterDef = FILTERS.find((f) => f.id === this.state.filter) || FILTERS[0];
-      const { brightness, contrast, saturation, warmth, fade } = this.state.adjustments;
-      const warmthDeg = warmth;
-      const fadeFactor = 1 - Math.min(Math.max(fade, 0), 1) * 0.15;
-      const filterParts = [
-        `brightness(${brightness})`,
-        `contrast(${contrast})`,
-        `saturate(${saturation})`,
-        warmth !== 0 ? `hue-rotate(${warmthDeg}deg)` : "",
-        fade !== 0 ? `brightness(${fadeFactor})` : "",
-        filterDef.css
-      ].filter(Boolean);
-      this.previewImg.style.filter = filterParts.join(" ");
+      this.previewImg.style.filter = this.buildFilterCss(this.state.filter) || "none";
     }
 
     reset() {

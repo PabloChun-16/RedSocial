@@ -268,6 +268,7 @@
   display:grid; grid-template-columns: 20px 1fr; align-items:center; gap:10px;
   width:100%; padding:10px 14px; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; font-weight:600;
 }
+.publication-viewer__menu-item .icon{ width:18px; height:18px; }
 .publication-viewer__menu-item[data-action="delete"]{ color:#f05252; }
 .publication-viewer.is-day .publication-viewer__menu-item[data-action="delete"]{ color:#c53030; }
 .publication-viewer__menu-item:hover{ background: rgba(255,255,255,.06); }

@@ -7,6 +7,23 @@
     fade: 0
   };
 
+  function normalizeAdjustments(source){
+    const normalized = { ...DEFAULT_ADJUSTMENTS };
+    if(!source || typeof source !== "object") return normalized;
+    Object.keys(normalized).forEach((key) => {
+      const value = source[key];
+      if(typeof value === "number" && Number.isFinite(value)){
+        normalized[key] = value;
+      }else if(typeof value === "string" && value.trim() !== ""){
+        const parsed = Number.parseFloat(value);
+        if(!Number.isNaN(parsed)){
+          normalized[key] = parsed;
+        }
+      }
+    });
+    return normalized;
+  }
+
   const FILTERS = [
     { id: "original", css: "" },
     { id: "aurora", css: "contrast(1.05) saturate(1.18)" },
@@ -78,6 +95,10 @@
       ...publication,
       image: normalizedImage,
       owner,
+      filter:
+        typeof publication.filter === "string" && publication.filter.trim()
+          ? publication.filter.trim()
+          : previous?.filter || "original",
       likes:
         typeof publication.likes === "number"
           ? publication.likes
@@ -102,11 +123,10 @@
         typeof publication.commentsCount === "number"
           ? publication.commentsCount
           : commentsSource.length,
-      adjustments: {
-        ...DEFAULT_ADJUSTMENTS,
+      adjustments: normalizeAdjustments({
         ...(previous?.adjustments || {}),
         ...(publication.adjustments || {})
-      }
+      })
     };
   }
 
@@ -184,6 +204,7 @@
         normalized.isOwn ||
         (normalized.owner?.id && shell?.getUser?.()?.id && normalized.owner.id === shell.getUser().id)
       );
+      const filterCss = buildFilterCss(normalized) || "none";
       card.innerHTML = `
         <div class="post__header">
           <img src="${ownerImage}" alt="Avatar ${ownerName}" />
@@ -196,7 +217,7 @@
           </button>
         </div>
         <figure class="post__media">
-          <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${buildFilterCss(normalized)}" />
+          <img src="${normalized.image}" alt="${normalized.caption || "Publicación"}" style="filter:${filterCss}" />
         </figure>
         <div class="post__actions">
           <button class="chip like${normalized.liked ? " is-active" : ""}" type="button" data-action="like" aria-pressed="${normalized.liked ? "true" : "false"}">♥ ${normalized.likes || 0}</button>

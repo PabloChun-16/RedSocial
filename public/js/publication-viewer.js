@@ -7,6 +7,23 @@
     fade: 0
   };
 
+  function normalizeAdjustments(source){
+    const normalized = { ...DEFAULT_ADJUSTMENTS };
+    if(!source || typeof source !== "object") return normalized;
+    Object.keys(normalized).forEach((key) => {
+      const value = source[key];
+      if(typeof value === "number" && Number.isFinite(value)){
+        normalized[key] = value;
+      }else if(typeof value === "string" && value.trim() !== ""){
+        const parsed = Number.parseFloat(value);
+        if(!Number.isNaN(parsed)){
+          normalized[key] = parsed;
+        }
+      }
+    });
+    return normalized;
+  }
+
   const FILTERS = [
     { id: "original", css: "" },
     { id: "aurora", css: "contrast(1.05) saturate(1.18)" },
@@ -149,11 +166,10 @@
       ? previous.tags
       : [];
 
-    const adjustments = {
-      ...DEFAULT_ADJUSTMENTS,
+    const adjustments = normalizeAdjustments({
       ...(previous?.adjustments || {}),
       ...(base.adjustments || {})
-    };
+    });
 
     const normalized = {
       id: base.id ?? previous?.id ?? base._id?.toString?.(),
@@ -162,7 +178,9 @@
         "/media/iconobase.png",
       caption: base.caption ?? previous?.caption ?? "",
       tags,
-      filter: base.filter || previous?.filter || "original",
+      filter: typeof base.filter === "string" && base.filter.trim()
+        ? base.filter.trim()
+        : previous?.filter || "original",
       adjustments,
       likes:
         typeof base.likes === "number"

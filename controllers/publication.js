@@ -13,6 +13,23 @@ const DEFAULT_ADJUSTMENTS = {
   fade: 0
 };
 
+const normalizeAdjustments = (raw = {}) => {
+  const normalized = { ...DEFAULT_ADJUSTMENTS };
+  if(!raw || typeof raw !== "object") return normalized;
+  Object.keys(normalized).forEach((key) => {
+    const value = raw[key];
+    if(typeof value === "number" && Number.isFinite(value)){
+      normalized[key] = value;
+    }else if(typeof value === "string" && value.trim() !== ""){
+      const parsed = Number.parseFloat(value);
+      if(!Number.isNaN(parsed)){
+        normalized[key] = parsed;
+      }
+    }
+  });
+  return normalized;
+};
+
 const normalizeUserRef = (value) => {
   if(!value) return null;
   const source =
@@ -73,8 +90,11 @@ const sanitizePublication = (doc, currentUserId, options = {}) => {
     image: relativeImage,
     caption: data.caption || "",
     tags: Array.isArray(data.tags) ? data.tags : [],
-    filter: data.filter || "original",
-    adjustments: { ...DEFAULT_ADJUSTMENTS, ...(data.adjustments || {}) },
+    filter:
+      typeof data.filter === "string" && data.filter.trim()
+        ? data.filter.trim().toLowerCase()
+        : "original",
+    adjustments: normalizeAdjustments(data.adjustments),
     likes: likesCount,
     liked: likedBy.includes(currentUserId),
     saved: savedBy.includes(currentUserId),
@@ -135,11 +155,11 @@ const parseTags = (raw = "") =>
 
 const parseAdjustments = (raw) => {
   if (!raw) return { ...DEFAULT_ADJUSTMENTS };
-  if (typeof raw === "object") return { ...DEFAULT_ADJUSTMENTS, ...raw };
+  if (typeof raw === "object") return normalizeAdjustments(raw);
   try {
     const parsed = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null) {
-      return { ...DEFAULT_ADJUSTMENTS, ...parsed };
+      return normalizeAdjustments(parsed);
     }
   } catch (err) {
     // ignored, fallback to defaults
@@ -171,7 +191,7 @@ const createPublication = async (req, res) => {
 
     const caption = req.body.caption?.trim() || "";
     const tags = parseTags(req.body.tags || "");
-    const filter = req.body.filter?.trim() || "original";
+    const filter = req.body.filter?.toString?.().trim().toLowerCase() || "original";
     const visibility = req.body.visibility === "friends" ? "friends" : "public";
     const adjustments = parseAdjustments(req.body.adjustments);
 

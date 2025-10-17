@@ -11,6 +11,23 @@
     fade: 0
   };
 
+  function normalizeAdjustments(source){
+    const normalized = { ...DEFAULT_ADJUSTMENTS };
+    if(!source || typeof source !== "object") return normalized;
+    Object.keys(normalized).forEach((key) => {
+      const value = source[key];
+      if(typeof value === "number" && Number.isFinite(value)){
+        normalized[key] = value;
+      }else if(typeof value === "string" && value.trim() !== ""){
+        const parsed = Number.parseFloat(value);
+        if(!Number.isNaN(parsed)){
+          normalized[key] = parsed;
+        }
+      }
+    });
+    return normalized;
+  }
+
   const FILTERS = [
     { id: "original", css: "" },
     { id: "aurora", css: "contrast(1.05) saturate(1.18)" },
@@ -151,11 +168,14 @@
         typeof publication.commentsCount === "number"
           ? publication.commentsCount
           : commentsSource.length,
-      adjustments: {
-        ...DEFAULT_ADJUSTMENTS,
+      filter:
+        typeof publication.filter === "string" && publication.filter.trim()
+          ? publication.filter.trim()
+          : previous?.filter || "original",
+      adjustments: normalizeAdjustments({
         ...(previous?.adjustments || {}),
         ...(publication.adjustments || {})
-      }
+      })
     };
   }
 
@@ -343,6 +363,7 @@
       card.className = "profile-card";
       card.dataset.id = item.id;
       const imageSrc = normalizeAssetPath(item.image, "posts") || "/media/iconobase.png";
+      const filterCss = buildFilterCss(item) || "none";
       const commentsCount =
         typeof item.commentsCount === "number"
           ? item.commentsCount
@@ -355,7 +376,7 @@
           ? `<span class="profile-card__owner">De ${ownerNick}</span>`
           : "";
       card.innerHTML = `
-        <img src="${imageSrc}" alt="${item.caption || "Publicación"}" loading="lazy" />
+        <img src="${imageSrc}" alt="${item.caption || "Publicación"}" loading="lazy" style="filter:${filterCss};" />
         <div class="profile-card__overlay">
           <div class="profile-card__meta">
             <span>♥ ${formatNumber(item.likes || 0)}</span>
