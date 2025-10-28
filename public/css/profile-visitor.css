@@ -1,0 +1,59 @@
+.profile-view.is-visitor .hero-avatar .btn-ghost{
+  display:none;
+}
+
+.profile-view.is-visitor .hero-cta{
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.visitor-actions .btn-follow,
+.visitor-actions .btn-message{
+  min-width:140px;
+}
+
+.visitor-actions .btn-message[disabled]{
+  opacity:.5;
+  cursor:not-allowed;
+}
+
+.btn-follow.is-following{
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.28);
+  color:inherit;
+}
+
+.btn-follow.is-following:hover{
+  background:rgba(255,255,255,.18);
+  transform:translateY(-1px);
+  box-shadow:0 12px 22px rgba(0,0,0,.22);
+}
+
+.btn-follow.is-friends{
+  background:linear-gradient(135deg,#4ea8ff,#57ffa0);
+  border:none;
+  color:#0f172a;
+}
+
+.btn-follow.is-friends:hover{
+  transform:translateY(-1px);
+  box-shadow:0 16px 32px rgba(0,0,0,.28);
+}
+
+body.theme-day .btn-follow.is-following{
+  background:rgba(24,38,70,.1);
+  border-color:rgba(24,38,70,.2);
+  color:#1f2937;
+}
+
+body.theme-day .btn-follow.is-following:hover{
+  background:rgba(24,38,70,.14);
+}
+
+body.theme-day .visitor-actions .btn-message[disabled]{
+  color:rgba(31,41,55,.6);
+}
+
+.profile-empty.visitor-empty button{
+  display:none;
+}

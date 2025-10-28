@@ -27,11 +27,13 @@ app.use(express.urlencoded({ extended: true }));
 const userRoutes = require("./routes/user");
 const publicationRoutes = require("./routes/publication");
 const followRoutes = require("./routes/follow");
+const storyRoutes = require("./routes/story");
 
 // Prefijos para las rutas
 app.use("/api/user", userRoutes);
 app.use("/api/publication", publicationRoutes);
 app.use("/api/follow", followRoutes);
+app.use("/api/stories", storyRoutes);
 
 // Ruta de prueba
 app.get("/ruta-prueba", (req, res) => {

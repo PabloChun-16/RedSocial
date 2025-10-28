@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mi Red Social · Perfil</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Great+Vibes&display=swap" />
+  <link rel="stylesheet" href="/css/app-shell.css" />
+  <link rel="stylesheet" href="/css/profile.css" />
+  <link rel="stylesheet" href="/css/profile-visitor.css" />
+</head>
+
+<body class="app-shell" data-page="profile">
+  <div id="app-root">
+    <div id="page-content" class="profile-view is-visitor" hidden>
+      <section class="profile-hero glass">
+        <div class="hero-avatar">
+          <img id="profile-hero-avatar" data-fallback="avatar" src="/media/iconobase.png" alt="Avatar principal" />
+        </div>
+        <div class="hero-details">
+          <div class="hero-header">
+            <h1 id="profile-username">@username</h1>
+            <span class="hero-name" id="profile-fullname">Nombre Apellido</span>
+          </div>
+          <ul class="hero-stats">
+            <li>
+              <strong id="profile-posts-count">0</strong>
+              <span>Publicaciones</span>
+            </li>
+            <li>
+              <strong id="profile-followers-count">0</strong>
+              <span>Seguidores</span>
+            </li>
+            <li>
+              <strong id="profile-following-count">0</strong>
+              <span>Siguiendo</span>
+            </li>
+          </ul>
+          <p class="hero-bio" id="profile-bio">
+            Personaliza tu historia: comparte momentos, colecciona recuerdos y mantente cerca de tu círculo creativo.
+          </p>
+          <div class="hero-meta">
+            <span class="hero-tagline" id="profile-tagline">Momentos de @username</span>
+            <span class="hero-role" id="profile-role">Miembro de la comunidad</span>
+          </div>
+          <div class="hero-cta visitor-actions">
+            <button class="btn-primary btn-follow" id="follow-btn" type="button">Seguir</button>
+            <button class="btn-secondary btn-message" id="message-btn" type="button" disabled>Mensaje</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="profile-gallery glass">
+        <header class="profile-gallery__head">
+          <h2>Publicaciones</h2>
+        </header>
+        <div class="profile-grid" id="profile-grid"></div>
+        <div class="profile-empty visitor-empty" id="profile-empty" hidden>
+          <div class="empty-illustration" aria-hidden="true">🌌</div>
+          <h3>Aún no hay publicaciones</h3>
+          <p>Cuando esta persona comparta momentos aparecerán por aquí.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/js/app-shell.js" defer></script>
+  <script src="/js/publication-viewer.js" defer></script>
+  <script src="/js/profile-view.js" defer></script>
+</body>
+</html>

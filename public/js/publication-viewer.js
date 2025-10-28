@@ -140,6 +140,35 @@
     };
   }
 
+  function getCurrentUserId(){
+    return window.appShell?.getUser?.()?.id || null;
+  }
+
+  function buildProfileUrl(user){
+    if(!user) return "/profile.html";
+    const currentId = getCurrentUserId();
+    const ownerId = user.id || user._id || user.authorId;
+    const ownerIdStr = ownerId?.toString?.() ?? ownerId;
+    if(currentId && ownerIdStr && currentId === ownerIdStr){
+      return "/profile.html";
+    }
+    const nick = user.nick || user.username || "";
+    if(nick){
+      return `/profile-view.html?nick=${encodeURIComponent(nick)}`;
+    }
+    if(ownerIdStr){
+      return `/profile-view.html?id=${encodeURIComponent(ownerIdStr)}`;
+    }
+    return "/profile.html";
+  }
+
+  function navigateToProfile(user){
+    if(!user) return;
+    const url = buildProfileUrl(user);
+    closeOverlay();
+    window.location.href = url;
+  }
+
   function normalizePublication(publication, previous = null){
     if(!publication && !previous) return null;
     const base =
@@ -295,6 +324,7 @@
       saveBtn: overlay.querySelector('[data-action="save"]'),
       likesLabel: overlay.querySelector(".publication-viewer__likes"),
       tags: overlay.querySelector(".publication-viewer__tags"),
+      ownerContainer: overlay.querySelector(".publication-viewer__owner"),
       ownerAvatar: overlay.querySelector(".publication-viewer__owner-avatar"),
       ownerName: overlay.querySelector(".publication-viewer__owner-name"),
       ownerDate: overlay.querySelector(".publication-viewer__owner-date"),
@@ -406,8 +436,16 @@
       if(!comment) return;
       const item = document.createElement("article");
       item.className = "publication-comment";
-      const avatarWrap = document.createElement("div");
+
+      const avatarWrap = document.createElement("button");
+      avatarWrap.type = "button";
       avatarWrap.className = "publication-comment__avatar";
+      avatarWrap.setAttribute(
+        "aria-label",
+        comment.author?.nick
+          ? `Ver perfil de @${comment.author.nick}`
+          : "Ver perfil del autor"
+      );
       const avatar = document.createElement("img");
       avatar.src =
         normalizeAssetPath(comment.author?.image || "", "avatars") || "/media/iconobase.png";
@@ -420,9 +458,12 @@
       body.className = "publication-comment__body";
       const header = document.createElement("div");
       header.className = "publication-comment__header";
-      const authorEl = document.createElement("span");
+      const authorEl = document.createElement("button");
+      authorEl.type = "button";
       authorEl.className = "publication-comment__author";
-      authorEl.textContent = comment.author?.nick ? `@${comment.author.nick}` : (comment.author?.name || "Usuario");
+      authorEl.textContent = comment.author?.nick
+        ? `@${comment.author.nick}`
+        : comment.author?.name || "Usuario";
       header.appendChild(authorEl);
       if(comment.isCreator){
         const badge = document.createElement("span");
@@ -441,6 +482,19 @@
       textEl.className = "publication-comment__text";
       textEl.textContent = comment.text || "";
       body.appendChild(textEl);
+
+      if(comment.author){
+        const navigate = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          navigateToProfile(comment.author);
+        };
+        avatarWrap.addEventListener("click", navigate);
+        authorEl.addEventListener("click", navigate);
+      }else{
+        avatarWrap.disabled = true;
+        authorEl.disabled = true;
+      }
 
       item.appendChild(avatarWrap);
       item.appendChild(body);
@@ -477,6 +531,29 @@
       const likes = Number(publication.likes) || 0;
       state.refs.likesLabel.textContent =
         likes === 1 ? "1 me gusta" : `${likes} me gusta`;
+    }
+    if(state.refs.ownerContainer){
+      if(publication.owner){
+        state.refs.ownerContainer.tabIndex = 0;
+        state.refs.ownerContainer.classList.add("is-clickable");
+        state.refs.ownerContainer.onclick = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          navigateToProfile(publication.owner);
+        };
+        state.refs.ownerContainer.onkeydown = (event) => {
+          if(event.key === "Enter" || event.key === " "){
+            event.preventDefault();
+            event.stopPropagation();
+            navigateToProfile(publication.owner);
+          }
+        };
+      }else{
+        state.refs.ownerContainer.classList.remove("is-clickable");
+        state.refs.ownerContainer.removeAttribute("tabindex");
+        state.refs.ownerContainer.onclick = null;
+        state.refs.ownerContainer.onkeydown = null;
+      }
     }
     if(state.refs.ownerName){
       state.refs.ownerName.textContent = ownerDisplay;

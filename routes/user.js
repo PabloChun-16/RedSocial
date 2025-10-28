@@ -14,6 +14,7 @@ router.get("/all", UserController.listUsers);
 router.post("/register", UserController.register);
 router.post("/login", UserController.login);
 router.get("/profile", auth, UserController.getProfile);
+router.get("/public/:identifier", auth, UserController.getPublicProfile);
 
 const avatarMiddleware = (req, res, next) => {
   avatarUpload.single("avatar")(req, res, (err) => {

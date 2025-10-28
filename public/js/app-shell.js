@@ -30,10 +30,23 @@
           <span>Mensajes</span>
           <span class="badge">2</span>
         </a>
-        <a class="sidebar-link js-open-composer" data-page-target="create" href="#">
-          <span class="icon icon-plus" aria-hidden="true"></span>
-          <span>Crear</span>
-        </a>
+        <div class="sidebar-create">
+          <button class="sidebar-link" data-page-target="create" data-create-trigger type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="icon icon-plus" aria-hidden="true"></span>
+            <span>Crear</span>
+            <span class="sidebar-link__caret" aria-hidden="true"></span>
+          </button>
+          <div class="create-menu" id="app-create-menu" role="menu" aria-hidden="true">
+            <button type="button" class="create-menu__item js-open-composer" data-composer-mode="publication" role="menuitem">
+              <span class="create-menu__icon" aria-hidden="true">🖼️</span>
+              <span>Publicación</span>
+            </button>
+            <button type="button" class="create-menu__item" data-composer-mode="story" role="menuitem">
+              <span class="create-menu__icon" aria-hidden="true">✨</span>
+              <span>Historia</span>
+            </button>
+          </div>
+        </div>
         <a class="sidebar-link" data-page-target="profile" href="/profile.html">
           <span class="avatar-ring">
             <img id="app-sidebar-avatar" data-fallback="avatar" src="/media/iconobase.png" alt="Perfil" />
@@ -327,6 +340,20 @@
     toggleNotificationsPanel(false);
   }
 
+  function handleCreateMenuOutside(event){
+    if(!refs?.createMenu) return;
+    const isTrigger = refs.createTrigger?.contains(event.target);
+    const isInside = refs.createMenu.contains(event.target);
+    if(isTrigger || isInside) return;
+    closeCreateMenu();
+  }
+
+  function handleCreateMenuKeydown(event){
+    if(event.key === "Escape"){
+      closeCreateMenu();
+    }
+  }
+
   function toggleNotificationsPanel(force){
     if(!refs?.notifyPanel || !refs?.notifyToggle) return;
     const isOpen = state.notificationsOpen;
@@ -339,10 +366,43 @@
     refs.notifyToggle.classList.toggle("is-active", nextState);
     refs.notifyPanel.classList.toggle("is-open", nextState);
     if(nextState){
+      closeCreateMenu();
       document.addEventListener("click", handleNotificationsOutsideClick, { capture: true });
       loadNotifications();
     }else{
       document.removeEventListener("click", handleNotificationsOutsideClick, { capture: true });
+    }
+  }
+
+  function openCreateMenu(){
+    if(!refs?.createMenu) return;
+    refs.createMenu.classList.add("is-open");
+    refs.createMenu.setAttribute("aria-hidden", "false");
+    refs.createTrigger?.classList.add("is-open");
+    refs.createTrigger?.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", handleCreateMenuOutside, { capture: true });
+    document.addEventListener("keydown", handleCreateMenuKeydown);
+  }
+
+  function closeCreateMenu(){
+    if(!refs?.createMenu) return;
+    refs.createMenu.classList.remove("is-open");
+    refs.createMenu.setAttribute("aria-hidden", "true");
+    refs.createTrigger?.classList.remove("is-open");
+    refs.createTrigger?.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", handleCreateMenuOutside, { capture: true });
+    document.removeEventListener("keydown", handleCreateMenuKeydown);
+  }
+
+  function toggleCreateMenu(force){
+    if(!refs?.createMenu) return;
+    const isOpen = refs.createMenu.classList.contains("is-open");
+    const nextState = typeof force === "boolean" ? force : !isOpen;
+    if(nextState){
+      toggleNotificationsPanel(false);
+      openCreateMenu();
+    }else{
+      closeCreateMenu();
     }
   }
 
@@ -437,6 +497,7 @@
   function setActiveSidebar(page){
     state.page = page;
     if(!refs) return;
+    closeCreateMenu();
     refs.sidebarLinks.forEach((link) => {
       link.classList.toggle("is-active", link.dataset.pageTarget === page);
     });
@@ -477,7 +538,10 @@
       notifyPanel: root.querySelector("#app-notify-panel"),
       notifyList: root.querySelector("#app-notify-list"),
       notifyCount: root.querySelector("#app-notify-count"),
-      notifyMark: root.querySelector("#app-notify-mark")
+      notifyMark: root.querySelector("#app-notify-mark"),
+      createTrigger: root.querySelector("[data-create-trigger]"),
+      createMenu: root.querySelector("#app-create-menu"),
+      createItems: Array.from(root.querySelectorAll(".create-menu__item"))
     };
     appShell.content = root.querySelector("#app-content");
 
@@ -500,11 +564,22 @@
       event.stopPropagation();
       markNotificationsAsRead();
     });
+    refs.createTrigger?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleCreateMenu();
+    });
+    refs.createItems?.forEach((item) => {
+      item.addEventListener("click", () => {
+        closeCreateMenu();
+      });
+    });
 
     if(pageFragment && pageFragment.childNodes.length){
       appShell.content.appendChild(pageFragment);
     }
 
+    closeCreateMenu();
     setActiveSidebar(state.page);
     renderNotifications();
     updateNotificationBadge();

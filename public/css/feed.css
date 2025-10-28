@@ -139,6 +139,26 @@ body.theme-day .stories__add{
   opacity:.6;
 }
 
+.story--empty{
+  opacity:.88;
+}
+
+.story--empty .story-ring{
+  background:linear-gradient(135deg,rgba(255,255,255,.2),rgba(255,255,255,.06));
+  border:1px dashed rgba(255,255,255,.32);
+}
+
+.story--empty .story-hint{
+  opacity:.96;
+  color:var(--ink);
+  font-weight:600;
+}
+
+body.theme-day .story--empty .story-ring{
+  background:linear-gradient(135deg,rgba(240,244,255,.94),rgba(240,244,255,.74));
+  border-color:rgba(24,38,70,.24);
+}
+
 .story.active,
 .story.pulse{
   animation:pulseBorder 4.5s ease-in-out infinite;
@@ -227,6 +247,24 @@ body.theme-day .icon-btn{
   gap:12px;
   z-index:1;
   position: relative;
+}
+
+.post__owner{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  border:none;
+  background:transparent;
+  color:inherit;
+  padding:0;
+  margin:0;
+  text-align:left;
+  cursor:pointer;
+}
+
+.post__owner:focus-visible{
+  outline:2px solid rgba(110,185,255,.8);
+  border-radius:14px;
 }
 
 .post__header img{
@@ -453,6 +491,273 @@ body.theme-day .chip.save.is-active{
   0%{ opacity:0; transform:translate3d(0,22px,0) scale(.98) rotate(-.6deg); }
   60%{ opacity:1; transform:translate3d(0,-6px,0) scale(1.01) rotate(.4deg); }
   100%{ opacity:1; transform:translate3d(0,0,0) scale(1) rotate(0deg); }
+}
+
+.story-viewer{
+  position:fixed;
+  inset:0;
+  background:rgba(5,8,18,.82);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  z-index:1200;
+}
+
+.story-viewer.is-visible{
+  display:flex;
+}
+
+.story-viewer.is-day{
+  background:rgba(240,244,255,.82);
+}
+
+.story-viewer__modal{
+  position:relative;
+  width:min(360px,82vw);
+  max-height:min(88vh,640px);
+  aspect-ratio:9 / 16;
+  background:rgba(4,8,18,.92);
+  border-radius:32px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  box-shadow:0 32px 68px rgba(0,0,0,.42);
+}
+
+.story-viewer.is-day .story-viewer__modal{
+  background:rgba(255,255,255,.94);
+  box-shadow:0 28px 60px rgba(24,38,70,.28);
+}
+
+.story-viewer__head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:18px 20px 0;
+  z-index:2;
+}
+
+.story-viewer__identity{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  cursor:default;
+}
+
+.story-viewer__identity.is-clickable{
+  cursor:pointer;
+}
+
+.story-viewer__identity.is-clickable:focus-visible{
+  outline:2px solid rgba(110,185,255,.8);
+  border-radius:16px;
+}
+
+.story-viewer__avatar{
+  width:44px;
+  height:44px;
+  border-radius:50%;
+  padding:2px;
+  background:linear-gradient(135deg,#79d9ff,#ff8fab);
+}
+
+.story-viewer__avatar img{
+  width:100%;
+  height:100%;
+  border-radius:50%;
+  object-fit:cover;
+  display:block;
+}
+
+.story-viewer__meta{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.story-viewer__name{
+  font-weight:600;
+  font-size:15px;
+}
+
+.story-viewer__time{
+  font-size:12px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  opacity:.7;
+}
+
+.story-viewer__close{
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  border:none;
+  background:rgba(0,0,0,.35);
+  color:#fff;
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+  transition:transform .2s ease, background .2s ease;
+}
+
+.story-viewer__close:hover{ transform:scale(1.05); }
+
+.story-viewer.is-day .story-viewer__close{
+  background:rgba(24,38,70,.18);
+  color:#1f2937;
+}
+
+.story-viewer__body{
+  position:relative;
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:12px 18px 22px;
+}
+
+.story-viewer__media{
+  position:relative;
+  width:100%;
+  height:100%;
+  border-radius:26px;
+  overflow:hidden;
+  background:#000;
+}
+
+.story-viewer__image{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  background:#000;
+  display:block;
+  opacity:0;
+  transition:opacity .28s ease;
+}
+
+.story-viewer__image.is-loaded{
+  opacity:1;
+}
+
+.story-viewer__overlay{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+.story-viewer__text{
+  position:absolute;
+  transform:translate(-50%, -50%);
+  padding:10px 16px;
+  border-radius:28px;
+  background:rgba(0,0,0,.32);
+  color:#fff;
+  font-weight:700;
+  letter-spacing:.02em;
+  line-height:1.25;
+  text-align:center;
+  white-space:pre-wrap;
+  box-shadow:0 20px 40px rgba(0,0,0,.36);
+  text-shadow:0 4px 16px rgba(0,0,0,.38);
+}
+
+.story-viewer.is-day .story-viewer__text{
+  background:rgba(24,38,70,.26);
+  color:#1f2937;
+  text-shadow:0 4px 14px rgba(24,38,70,.2);
+}
+
+.story-viewer__nav{
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:18%;
+  border:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(to right,rgba(0,0,0,.32),rgba(0,0,0,0));
+  opacity:.85;
+  transition:opacity .18s ease;
+  cursor:pointer;
+  color:#fff;
+  font-size:32px;
+  z-index:3;
+  text-shadow:0 4px 14px rgba(0,0,0,.45);
+}
+
+.story-viewer__nav--prev{ left:0; }
+
+.story-viewer__nav--next{
+  right:0;
+  left:auto;
+  background:linear-gradient(to left,rgba(0,0,0,.32),rgba(0,0,0,0));
+}
+
+.story-viewer__body:hover .story-viewer__nav{ opacity:1; }
+
+.story-viewer__nav:focus-visible{
+  outline:2px solid rgba(110,185,255,.8);
+  opacity:1;
+}
+
+.story-viewer__nav::after{
+  content:"›";
+  line-height:1;
+}
+
+.story-viewer__nav--prev::after{
+  content:"‹";
+}
+
+.story-viewer.is-day .story-viewer__nav{
+  background:linear-gradient(to right,rgba(24,38,70,.18),rgba(24,38,70,0));
+  color:#1f2937;
+  text-shadow:none;
+}
+
+.story-viewer.is-day .story-viewer__nav--next{
+  background:linear-gradient(to left,rgba(24,38,70,.18),rgba(24,38,70,0));
+}
+
+.story-progress{
+  position:absolute;
+  top:10px;
+  left:20px;
+  right:20px;
+  display:flex;
+  gap:6px;
+  z-index:5;
+}
+
+.story-progress__segment{
+  flex:1;
+  height:3px;
+  background:rgba(255,255,255,.22);
+  border-radius:999px;
+  overflow:hidden;
+}
+
+.story-progress__fill{
+  width:0;
+  height:100%;
+  background:rgba(255,255,255,.92);
+}
+
+.story-viewer.is-day .story-progress__segment{
+  background:rgba(24,38,70,.18);
+}
+
+.story-viewer.is-day .story-progress__fill{
+  background:rgba(24,38,70,.82);
+}
+
+body.story-viewer-open{
+  overflow:hidden;
 }
 
 @media (max-width:960px){

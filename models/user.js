@@ -53,6 +53,22 @@ const userSchema = new Schema({
     type: String,
     default: "iconobase.png"
   },
+  followers: {
+    type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    default: () => []
+  },
+  following: {
+    type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    default: () => []
+  },
+  followersCount: {
+    type: Number,
+    default: 0
+  },
+  followingCount: {
+    type: Number,
+    default: 0
+  },
   notifications: {
     type: [notificationSchema],
     default: () => []

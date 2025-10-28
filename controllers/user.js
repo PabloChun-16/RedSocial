@@ -2,16 +2,37 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const User = require("../models/user");
+const Publication = require("../models/publication");
 const jwt = require("../services/jwt");
 
 const resolvePublicPath = (relativePath = "") =>
   path.join(__dirname, "..", "public", relativePath);
+
+const getFollowCounts = (source = {}) => {
+  const followersArray = Array.isArray(source.followers) ? source.followers : [];
+  const followingArray = Array.isArray(source.following) ? source.following : [];
+  const followersCount =
+    typeof source.followersCount === "number"
+      ? source.followersCount
+      : followersArray.length;
+  const followingCount =
+    typeof source.followingCount === "number"
+      ? source.followingCount
+      : followingArray.length;
+  return {
+    followersArray,
+    followingArray,
+    followersCount,
+    followingCount
+  };
+};
 
 const sanitizeUser = (doc) => {
   if(!doc) return null;
   const obj = typeof doc.toObject === "function" ? doc.toObject() : doc;
   const notifications = Array.isArray(obj.notifications) ? obj.notifications : [];
   const unreadCount = notifications.filter((item) => !item?.isRead).length;
+  const { followersCount, followingCount } = getFollowCounts(obj);
   return {
     id: obj._id?.toString() ?? obj.id,
     name: obj.name,
@@ -21,6 +42,13 @@ const sanitizeUser = (doc) => {
     role: obj.role,
     image: obj.image || "iconobase.png",
     bio: obj.bio,
+    followers: followersCount,
+    following: followingCount,
+    stats: {
+      followers: followersCount,
+      following: followingCount,
+      posts: obj.stats?.posts ?? obj.postsCount ?? 0
+    },
     notificationsUnread: unreadCount
   };
 };
@@ -70,6 +98,53 @@ const sanitizeNotification = (doc) => {
     actor,
     publication
   };
+};
+
+const sanitizePublicUser = (doc, currentUserId, options = {}) => {
+  if(!doc) return null;
+  const data =
+    typeof doc.toObject === "function" ? doc.toObject({ virtuals: false }) : doc;
+  const { followersArray, followingArray, followersCount, followingCount } =
+    getFollowCounts(data);
+  const followerIds = new Set(followersArray.map((item) => item?.toString?.()).filter(Boolean));
+  const followingIds = new Set(followingArray.map((item) => item?.toString?.()).filter(Boolean));
+  const id = data._id?.toString?.() ?? data.id ?? null;
+  const currentId = currentUserId?.toString?.() ?? currentUserId ?? null;
+  const isSelf = Boolean(currentId && id && currentId === id);
+  const isFollowing = !isSelf && currentId ? followerIds.has(currentId) : false;
+  const isFollowed = !isSelf && currentId ? followingIds.has(currentId) : false;
+  const postsCount =
+    typeof options.postsCount === "number"
+      ? options.postsCount
+      : typeof data.postsCount === "number"
+      ? data.postsCount
+      : data.stats?.posts ?? 0;
+
+  const result = {
+    id,
+    nick: data.nick,
+    name: data.name,
+    surname: data.surname,
+    bio: data.bio,
+    image: data.image || "iconobase.png",
+    role: data.role || "ROLE_USER",
+    createdAt: data.created_at || data.createdAt || null,
+    stats: {
+      followers: followersCount,
+      following: followingCount,
+      posts: postsCount
+    },
+    followersCount,
+    followingCount,
+    isSelf,
+    relationship: {
+      following: isFollowing,
+      followedBy: isFollowed,
+      friends: isFollowing && isFollowed
+    }
+  };
+  result.canFollow = !isSelf;
+  return result;
 };
 
 // Ruta de prueba (la de siempre)
@@ -414,6 +489,61 @@ const markNotificationsAsRead = async (req, res) => {
   }
 };
 
+const getPublicProfile = async (req, res) => {
+  const identifierRaw = req.params.identifier;
+  const currentUserId = req.user.id;
+  if(!identifierRaw){
+    return res.status(400).json({
+      status: "error",
+      message: "Debes indicar el usuario a consultar"
+    });
+  }
+  const identifier = identifierRaw.toString().trim().toLowerCase();
+  const isCurrentUser =
+    identifier === "me" ||
+    identifier === currentUserId?.toString?.().toLowerCase() ||
+    identifier === req.user.nick?.toLowerCase?.();
+  try{
+    let targetUser = null;
+    if(isCurrentUser){
+      targetUser = await User.findById(currentUserId).select("-password").exec();
+    }else if(/^[0-9a-f]{24}$/.test(identifier)){
+      targetUser = await User.findOne({
+        $or: [{ _id: identifier }, { nick: identifier }]
+      })
+        .select("-password")
+        .exec();
+    }else{
+      targetUser = await User.findOne({ nick: identifier }).select("-password").exec();
+    }
+
+    if(!targetUser){
+      return res.status(404).json({
+        status: "error",
+        message: "El usuario no existe"
+      });
+    }
+
+    const targetId = targetUser._id?.toString?.();
+    const postsCount = await Publication.countDocuments({ user: targetId }).exec();
+    const payload = sanitizePublicUser(targetUser, currentUserId, { postsCount });
+    if(payload.isSelf && identifier !== "me"){
+      payload.canFollow = false;
+    }
+
+    return res.status(200).json({
+      status: "success",
+      user: payload
+    });
+  }catch(error){
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo obtener el perfil solicitado",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   pruebaUser,
   register,
@@ -422,5 +552,8 @@ module.exports = {
   getProfile,
   updateProfile,
   listNotifications,
-  markNotificationsAsRead
+  markNotificationsAsRead,
+  getPublicProfile,
+  sanitizeUser,
+  sanitizePublicUser
 };

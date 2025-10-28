@@ -1,11 +1,9 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 const FollowController = require("../controllers/follow");
+const { auth } = require("../middlewares/auth");
 
-//definiar rutas
-
-router.get("/prueba-follow", FollowController.pruebaFollow);
-
-//exportar modulo
+router.post("/:userId", auth, FollowController.followUser);
+router.delete("/:userId", auth, FollowController.unfollowUser);
 
 module.exports = router;

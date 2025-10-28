@@ -4,9 +4,11 @@ const multer = require("multer");
 
 const AVATAR_FOLDER = path.join(__dirname, "..", "public", "uploads", "avatars");
 const POST_FOLDER = path.join(__dirname, "..", "public", "uploads", "posts");
+const STORY_FOLDER = path.join(__dirname, "..", "public", "uploads", "stories");
 
 fs.mkdirSync(AVATAR_FOLDER, { recursive: true });
 fs.mkdirSync(POST_FOLDER, { recursive: true });
+fs.mkdirSync(STORY_FOLDER, { recursive: true });
 
 const createStorage = (folder) =>
   multer.diskStorage({
@@ -55,7 +57,16 @@ const postUpload = multer({
   }
 });
 
+const storyUpload = multer({
+  storage: createStorage(STORY_FOLDER),
+  fileFilter: makeFileFilter("media"),
+  limits: {
+    fileSize: 12 * 1024 * 1024 // 12MB
+  }
+});
+
 module.exports = {
   avatarUpload,
-  postUpload
+  postUpload,
+  storyUpload
 };
