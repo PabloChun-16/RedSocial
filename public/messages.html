@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Mi Red Social · Mensajes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Great+Vibes&display=swap" />
+  <link rel="stylesheet" href="/css/app-shell.css" />
+  <link rel="stylesheet" href="/css/messages.css" />
+</head>
+
+<body class="app-shell" data-page="messages">
+  <div id="app-root">
+    <div id="page-content" class="messages-layout" hidden>
+      <aside class="messages-sidebar glass">
+        <header class="messages-sidebar__head">
+          <div>
+            <h1>Mensajes</h1>
+            <p class="messages-sidebar__sub">Conversaciones y solicitudes</p>
+          </div>
+        </header>
+        <label class="messages-search">
+          <span class="icon-search" aria-hidden="true"></span>
+          <input id="messages-search-input" type="search" placeholder="Buscar chats" autocomplete="off" />
+        </label>
+        <nav class="messages-thread-list" id="messages-thread-list" aria-label="Conversaciones">
+          <p class="messages-thread-empty">Aún no tienes conversaciones. Cuando sigas a alguien o esa persona te siga, aparecerá aquí.</p>
+        </nav>
+      </aside>
+
+      <section class="messages-conversation glass" id="messages-conversation">
+        <div class="messages-alert" id="messages-alert" hidden></div>
+        <div class="conversation-placeholder" id="messages-placeholder">
+          <div class="conversation-placeholder__icon">💬</div>
+          <h2>Selecciona un chat</h2>
+          <p>Elige una conversación para comenzar a enviar mensajes. Si aún no tienes chats, conecta con tu comunidad siguiendo nuevos perfiles.</p>
+        </div>
+
+        <header class="conversation-header" id="messages-conversation-header" hidden>
+          <div class="conversation-header__contact">
+            <div class="conversation-header__avatar">
+              <img id="messages-conversation-avatar" src="/media/iconobase.png" alt="Avatar" data-fallback="avatar" />
+            </div>
+            <div>
+              <h2 id="messages-conversation-name"></h2>
+              <p id="messages-conversation-nick"></p>
+            </div>
+          </div>
+          <div class="conversation-header__meta" id="messages-conversation-meta"></div>
+        </header>
+
+        <div class="conversation-body" id="messages-conversation-body" role="log" aria-live="polite"></div>
+
+        <footer class="conversation-input" id="messages-conversation-input" hidden>
+          <form id="messages-compose-form" autocomplete="off">
+            <textarea id="messages-compose-text" rows="1" placeholder="Escribe un mensaje..." required></textarea>
+            <button type="submit" class="conversation-send" title="Enviar mensaje">
+              <span>Enviar</span>
+            </button>
+          </form>
+        </footer>
+      </section>
+    </div>
+  </div>
+
+  <script src="/js/app-shell.js" defer></script>
+  <script src="/js/messages.js" defer></script>
+</body>
+</html>

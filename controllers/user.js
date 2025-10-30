@@ -4,6 +4,7 @@ const bcrypt = require("bcrypt");
 const User = require("../models/user");
 const Publication = require("../models/publication");
 const jwt = require("../services/jwt");
+const { getUnreadMessagesCount } = require("../services/messages");
 
 const resolvePublicPath = (relativePath = "") =>
   path.join(__dirname, "..", "public", relativePath);
@@ -27,12 +28,13 @@ const getFollowCounts = (source = {}) => {
   };
 };
 
-const sanitizeUser = (doc) => {
+const sanitizeUser = (doc, extras = {}) => {
   if(!doc) return null;
   const obj = typeof doc.toObject === "function" ? doc.toObject() : doc;
   const notifications = Array.isArray(obj.notifications) ? obj.notifications : [];
   const unreadCount = notifications.filter((item) => !item?.isRead).length;
   const { followersCount, followingCount } = getFollowCounts(obj);
+  const extrasObj = typeof extras === "object" && extras !== null ? extras : {};
   return {
     id: obj._id?.toString() ?? obj.id,
     name: obj.name,
@@ -49,7 +51,13 @@ const sanitizeUser = (doc) => {
       following: followingCount,
       posts: obj.stats?.posts ?? obj.postsCount ?? 0
     },
-    notificationsUnread: unreadCount
+    notificationsUnread: unreadCount,
+    messagesUnread:
+      typeof extrasObj.messagesUnread === "number"
+        ? extrasObj.messagesUnread
+        : typeof obj.messagesUnread === "number"
+        ? obj.messagesUnread
+        : 0
   };
 };
 
@@ -89,6 +97,20 @@ const sanitizeNotification = (doc) => {
       owner: normalizeUserRef(raw.user)
     };
   }
+  let conversation = null;
+  if(data.conversation){
+    const raw =
+      typeof data.conversation.toObject === "function"
+        ? data.conversation.toObject({ virtuals: false })
+        : data.conversation;
+    conversation = {
+      id: raw._id?.toString() ?? raw.id,
+      updatedAt: raw.updatedAt,
+      participants: Array.isArray(raw.participants)
+        ? raw.participants.map(normalizeUserRef)
+        : []
+    };
+  }
   return {
     id: data._id?.toString() ?? data.id,
     type: data.type,
@@ -96,7 +118,8 @@ const sanitizeNotification = (doc) => {
     isRead: Boolean(data.isRead),
     createdAt: data.createdAt,
     actor,
-    publication
+    publication,
+    conversation
   };
 };
 
@@ -246,10 +269,12 @@ const login = async (req, res) => {
     // Generar token JWT
     const token = jwt.createToken(user);
 
+    const messagesUnread = await getUnreadMessagesCount(user._id);
+
     // Excluir la contraseña antes de devolver
     user.password = undefined;
 
-    const sanitized = sanitizeUser(user);
+    const sanitized = sanitizeUser(user, { messagesUnread });
     // Devolver los datos del usuario (y el token)
     return res.status(200).send({
       status: "success",
@@ -303,9 +328,10 @@ const getProfile = async (req, res) => {
         message: "Usuario no encontrado"
       });
     }
+    const messagesUnread = await getUnreadMessagesCount(user._id);
     return res.status(200).json({
       status: "success",
-      user: sanitizeUser(user)
+      user: sanitizeUser(user, { messagesUnread })
     });
   }catch(error){
     return res.status(500).json({
@@ -392,7 +418,8 @@ const updateProfile = async (req, res) => {
     }
 
     const saved = await user.save();
-    const sanitized = sanitizeUser(saved);
+    const messagesUnread = await getUnreadMessagesCount(saved._id);
+    const sanitized = sanitizeUser(saved, { messagesUnread });
 
     return res.status(200).json({
       status: "success",
@@ -418,6 +445,11 @@ const listNotifications = async (req, res) => {
         path: "notifications.publication",
         select: "image caption user",
         populate: { path: "user", select: "nick name image" }
+      })
+      .populate({
+        path: "notifications.conversation",
+        select: "participants updatedAt",
+        populate: { path: "participants", select: "nick name image" }
       })
       .exec();
 

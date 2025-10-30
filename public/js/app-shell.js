@@ -25,10 +25,10 @@
           <span class="icon icon-reels" aria-hidden="true"></span>
           <span>Reels</span>
         </a>
-        <a class="sidebar-link" data-page-target="messages" href="#">
+        <a class="sidebar-link" data-page-target="messages" href="/messages.html">
           <span class="icon icon-chat" aria-hidden="true"></span>
           <span>Mensajes</span>
-          <span class="badge">2</span>
+          <span class="badge" id="app-messages-badge" hidden>0</span>
         </a>
         <div class="sidebar-create">
           <button class="sidebar-link" data-page-target="create" data-create-trigger type="button" aria-haspopup="true" aria-expanded="false">
@@ -119,7 +119,8 @@
     user: null,
     notifications: [],
     unread: 0,
-    notificationsOpen: false
+    notificationsOpen: false,
+    messagesUnread: 0
   };
 
   const userListeners = new Set();
@@ -184,6 +185,50 @@
     refs.notifyToggle.classList.toggle("has-unread", unread > 0);
   }
 
+  function updateMessagesBadge(){
+    if(!refs?.messagesBadge) return;
+    const unread = Number(state.messagesUnread) || 0;
+    refs.messagesBadge.textContent = unread.toString();
+    refs.messagesBadge.hidden = unread < 1;
+    if(refs.messagesLink){
+      refs.messagesLink.classList.toggle("has-unread", unread > 0);
+    }
+  }
+
+  function setMessagesUnread(unread, { notify = true, persist = true } = {}){
+    const valueRaw = Number.parseInt(unread, 10);
+    const value = Number.isFinite(valueRaw) && valueRaw > 0 ? valueRaw : 0;
+    state.messagesUnread = value;
+    updateMessagesBadge();
+    if(state.user){
+      const nextUser = { ...state.user, messagesUnread: value };
+      state.user = nextUser;
+      if(persist){
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      }
+      if(notify){
+        userListeners.forEach((listener) => {
+          try{
+            listener(nextUser);
+          }catch(error){
+            console.warn("appShell user listener error", error);
+          }
+        });
+      }
+    }else if(persist){
+      const stored = localStorage.getItem(USER_KEY);
+      if(stored){
+        try{
+          const parsed = JSON.parse(stored);
+          parsed.messagesUnread = value;
+          localStorage.setItem(USER_KEY, JSON.stringify(parsed));
+        }catch(error){
+          console.warn("No se pudo actualizar el usuario almacenado", error);
+        }
+      }
+    }
+  }
+
   function renderNotifications(){
     if(!refs?.notifyList) return;
     const list = refs.notifyList;
@@ -199,20 +244,17 @@
     }
     refs.notifyMark?.removeAttribute("disabled");
     const fragment = document.createDocumentFragment();
-      notifications.forEach((item) => {
-        if(!item) return;
-        const actorName = item.actor?.nick ? `@${item.actor.nick}` : (item.actor?.name || "Alguien");
-        const avatarUrl =
-          normalizeAssetPath(item.actor?.image || "", "avatars") || "/media/iconobase.png";
-        const ownerNick = item.publication?.owner?.nick
-          ? `@${item.publication.owner.nick}`
-          : "";
-        const previewImage = normalizeAssetPath(item.publication?.image || "", "posts");
-        const previewFilter = item.publication
-          ? (window.publicationViewer?.buildFilterCss?.(item.publication) || "")
-          : "";
-        const entry = document.createElement("article");
-        entry.className = `notify-item${item.isRead ? "" : " is-unread"}`;
+    notifications.forEach((item) => {
+      if(!item) return;
+      const type = item.type || "generic";
+      const actorName = item.actor?.nick
+        ? `@${item.actor.nick}`
+        : item.actor?.name || "Alguien";
+      const avatarUrl =
+        normalizeAssetPath(item.actor?.image || "", "avatars") || "/media/iconobase.png";
+      const entry = document.createElement("article");
+      entry.className = `notify-item${item.isRead ? "" : " is-unread"}`;
+      entry.dataset.type = type;
 
       const avatarWrap = document.createElement("div");
       avatarWrap.className = "notify-item__avatar";
@@ -222,6 +264,7 @@
       avatarImg.dataset.fallback = "avatar";
       avatarWrap.appendChild(avatarImg);
       attachAvatarFallback(avatarImg);
+      entry.appendChild(avatarWrap);
 
       const bodyWrap = document.createElement("div");
       bodyWrap.className = "notify-item__body";
@@ -235,28 +278,48 @@
       const timeEl = document.createElement("span");
       timeEl.textContent = formatRelativeTime(item.createdAt) || "";
       meta.appendChild(timeEl);
-      if(ownerNick){
+      if(type === "message"){
+        const tag = document.createElement("span");
+        tag.textContent = "· Mensaje";
+        meta.appendChild(tag);
+      }else if(item.publication?.owner?.nick){
         const ownerEl = document.createElement("span");
-        ownerEl.textContent = `· ${ownerNick}`;
+        ownerEl.textContent = `· @${item.publication.owner.nick}`;
         meta.appendChild(ownerEl);
       }
       bodyWrap.appendChild(meta);
-
-      entry.appendChild(avatarWrap);
       entry.appendChild(bodyWrap);
 
-      if(previewImage){
-        const thumb = document.createElement("img");
-        thumb.className = "notify-item__thumb";
-        thumb.src = previewImage;
-        thumb.alt = "Vista previa";
-        if(previewFilter){
-          thumb.style.filter = previewFilter;
+      if(type !== "message"){
+        const previewImage = normalizeAssetPath(item.publication?.image || "", "posts");
+        if(previewImage){
+          const thumb = document.createElement("img");
+          thumb.className = "notify-item__thumb";
+          thumb.src = previewImage;
+          thumb.alt = "Vista previa";
+          const previewFilter =
+            item.publication
+              ? window.publicationViewer?.buildFilterCss?.(item.publication) || ""
+              : "";
+          if(previewFilter){
+            thumb.style.filter = previewFilter;
+          }
+          entry.appendChild(thumb);
         }
-        entry.appendChild(thumb);
       }
 
-      if(item.publication?.id){
+      if(type === "message"){
+        entry.addEventListener("click", () => {
+          toggleNotificationsPanel(false);
+          let target = "/messages.html";
+          if(item.conversation?.id){
+            target += `?conversation=${encodeURIComponent(item.conversation.id)}`;
+          }else if(item.actor?.id){
+            target += `?user=${encodeURIComponent(item.actor.id)}`;
+          }
+          window.location.href = target;
+        });
+      }else if(item.publication?.id){
         entry.addEventListener("click", () => {
           toggleNotificationsPanel(false);
           window.publicationViewer?.openById(item.publication.id);
@@ -295,6 +358,24 @@
       }
     }catch(error){
       console.warn(error.message || "Error al cargar notificaciones");
+    }
+  }
+
+  async function loadMessagesSummary(){
+    const token = localStorage.getItem("token");
+    if(!token) return;
+    try{
+      const res = await fetch("/api/messages/summary", {
+        headers: { Authorization: token }
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw new Error(data?.message || "No se pudo obtener el resumen de mensajes");
+      }
+      const unread = Number(data?.totalUnread);
+      setMessagesUnread(Number.isFinite(unread) ? unread : 0, { notify: false });
+    }catch(error){
+      console.warn(error.message || "Error al cargar el resumen de mensajes");
     }
   }
 
@@ -534,6 +615,8 @@
       logoutBtn: root.querySelector("#app-logout-btn"),
       fab: root.querySelector(".fab"),
       sidebarLinks: Array.from(root.querySelectorAll("[data-page-target]")),
+      messagesLink: root.querySelector('[data-page-target="messages"]'),
+      messagesBadge: root.querySelector("#app-messages-badge"),
       notifyToggle: root.querySelector("#app-notify-toggle"),
       notifyPanel: root.querySelector("#app-notify-panel"),
       notifyList: root.querySelector("#app-notify-list"),
@@ -583,6 +666,7 @@
     setActiveSidebar(state.page);
     renderNotifications();
     updateNotificationBadge();
+    updateMessagesBadge();
   }
 
   function collectPageContent(){
@@ -613,6 +697,7 @@
 
     refreshUserFromApi();
     loadNotifications();
+    loadMessagesSummary();
     appShell.isReady = true;
     emitReady();
   }
@@ -645,6 +730,13 @@
     markNotificationsAsRead(ids){
       markNotificationsAsRead(ids);
     },
+    getMessagesUnread(){
+      return state.messagesUnread;
+    },
+    setMessagesUnread(count, options){
+      setMessagesUnread(count, options);
+    },
+    refreshMessagesSummary: loadMessagesSummary,
     onUser(fn){
       if(typeof fn === "function"){
         userListeners.add(fn);
@@ -655,23 +747,54 @@
       if(fn) userListeners.delete(fn);
     },
     setUser(user, { persist = true } = {}){
-      state.user = user || null;
-      if(persist && user){
-        localStorage.setItem(USER_KEY, JSON.stringify(user));
-      }
-       if(user && typeof user.notificationsUnread === "number"){
-        state.unread = user.notificationsUnread;
-        updateNotificationBadge();
-      }else if(!user){
+      if(!user){
+        state.user = null;
+        if(persist){
+          localStorage.removeItem(USER_KEY);
+        }
         state.unread = 0;
         state.notifications = [];
         renderNotifications();
         updateNotificationBadge();
+        state.messagesUnread = 0;
+        updateMessagesBadge();
+        updateUserUi(null);
+        userListeners.forEach((listener) => {
+          try{
+            listener(null);
+          }catch(error){
+            console.warn("appShell user listener error", error);
+          }
+        });
+        return;
       }
-      updateUserUi(user);
+      const normalized = { ...user };
+      const notificationsUnread =
+        typeof normalized.notificationsUnread === "number"
+          ? normalized.notificationsUnread
+          : state.unread;
+      state.unread = Number.isFinite(notificationsUnread) ? notificationsUnread : 0;
+      updateNotificationBadge();
+
+      const messagesUnreadRaw =
+        typeof normalized.messagesUnread === "number"
+          ? normalized.messagesUnread
+          : state.messagesUnread;
+      const messagesUnread = Number.isFinite(messagesUnreadRaw)
+        ? Math.max(0, Math.trunc(messagesUnreadRaw))
+        : 0;
+      normalized.messagesUnread = messagesUnread;
+      state.messagesUnread = messagesUnread;
+      updateMessagesBadge();
+
+      state.user = normalized;
+      if(persist){
+        localStorage.setItem(USER_KEY, JSON.stringify(normalized));
+      }
+      updateUserUi(normalized);
       userListeners.forEach((listener) => {
         try{
-          listener(user);
+          listener(normalized);
         }catch(error){
           console.warn("appShell user listener error", error);
         }

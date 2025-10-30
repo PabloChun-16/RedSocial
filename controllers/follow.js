@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("../models/user");
 const { sanitizeUser } = require("./user");
+const { getUnreadMessagesCount } = require("../services/messages");
 
 const isObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 
@@ -115,6 +116,7 @@ const followUser = async (req, res) => {
     }
 
     const relationship = getRelationship(currentUser, targetUser);
+    const messagesUnread = await getUnreadMessagesCount(currentUserId);
 
     return res.status(200).json({
       status: "success",
@@ -130,7 +132,7 @@ const followUser = async (req, res) => {
         name: targetUser.name,
         image: targetUser.image
       },
-      currentUser: sanitizeUser(currentUser)
+      currentUser: sanitizeUser(currentUser, { messagesUnread })
     });
   }catch(error){
     return res.status(500).json({
@@ -206,6 +208,7 @@ const unfollowUser = async (req, res) => {
     }
 
     const relationship = getRelationship(currentUser, targetUser);
+    const messagesUnread = await getUnreadMessagesCount(currentUserId);
 
     return res.status(200).json({
       status: "success",
@@ -221,7 +224,7 @@ const unfollowUser = async (req, res) => {
         name: targetUser.name,
         image: targetUser.image
       },
-      currentUser: sanitizeUser(currentUser)
+      currentUser: sanitizeUser(currentUser, { messagesUnread })
     });
   }catch(error){
     return res.status(500).json({

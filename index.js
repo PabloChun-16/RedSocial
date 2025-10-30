@@ -7,7 +7,15 @@ const cors = require("cors");
 console.log("Bienvenido a mi red social");
 
 // Conectar a la BD
-connection();
+connection().then(async () => {
+  // Alinear índices de conversaciones para evitar colisiones por índices heredados
+  try{
+    const { ensureConversationIndexes } = require("./database/ensureIndexes");
+    await ensureConversationIndexes();
+  }catch(err){
+    console.warn("No se pudieron sincronizar los índices:", err?.message);
+  }
+});
 
 // Crear el servidor node
 const app = express();
@@ -28,12 +36,14 @@ const userRoutes = require("./routes/user");
 const publicationRoutes = require("./routes/publication");
 const followRoutes = require("./routes/follow");
 const storyRoutes = require("./routes/story");
+const messageRoutes = require("./routes/message");
 
 // Prefijos para las rutas
 app.use("/api/user", userRoutes);
 app.use("/api/publication", publicationRoutes);
 app.use("/api/follow", followRoutes);
 app.use("/api/stories", storyRoutes);
+app.use("/api/messages", messageRoutes);
 
 // Ruta de prueba
 app.get("/ruta-prueba", (req, res) => {

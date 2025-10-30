@@ -3,9 +3,14 @@ const mongoosePaginate = require("mongoose-paginate-v2");
 
 const notificationSchema = new Schema(
   {
-    type: { type: String, enum: ["like", "comment"], required: true },
+    type: {
+      type: String,
+      enum: ["like", "comment", "message"],
+      required: true
+    },
     actor: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    publication: { type: Schema.Types.ObjectId, ref: "Publication", required: true },
+    publication: { type: Schema.Types.ObjectId, ref: "Publication", default: null },
+    conversation: { type: Schema.Types.ObjectId, ref: "Conversation", default: null },
     message: { type: String, trim: true },
     isRead: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
