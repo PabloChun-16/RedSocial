@@ -34,7 +34,7 @@ const textBlockSchema = new Schema(
 const storySchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    image: { type: String, required: true },
+    imageKey: { type: String, required: true },
     filter: { type: String, trim: true, default: "original" },
     adjustments: { type: adjustmentsSchema, default: () => ({}) },
     textBlocks: { type: [textBlockSchema], default: () => [] },

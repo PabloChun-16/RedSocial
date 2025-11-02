@@ -2,6 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const router = express.Router();
 const UserController = require("../controllers/user");
+const AuthController = require("../controllers/authController");
 const { auth } = require("../middlewares/auth");
 const { avatarUpload } = require("../middlewares/upload");
 
@@ -11,8 +12,8 @@ router.get("/all", UserController.listUsers);
 
 
 // Rutas reales de usuario
-router.post("/register", UserController.register);
-router.post("/login", UserController.login);
+router.post("/register", AuthController.register);
+router.post("/login", AuthController.login);
 router.get("/profile", auth, UserController.getProfile);
 router.get("/public/:identifier", auth, UserController.getPublicProfile);
 

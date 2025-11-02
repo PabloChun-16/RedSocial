@@ -1,3 +1,6 @@
+// Cargar variables de entorno
+require("dotenv").config();
+
 // Importar dependencias
 const connection = require("./database/connection");
 const express = require("express");
@@ -22,7 +25,27 @@ const app = express();
 const puerto = 3900;
 
 // Configurar CORS (middleware)
-app.use(cors());
+const parseOrigins = (value = "") =>
+  value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const allowedOrigins = parseOrigins(process.env.CORS_ORIGINS || "");
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    console.warn(`Origen no permitido por CORS: ${origin}`);
+    return callback(null, false);
+  },
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 // Convertir los datos del body a objetos JS
 app.use(express.json());
@@ -32,6 +55,7 @@ app.use(express.static("public"));
 app.use(express.urlencoded({ extended: true }));
 
 // Configuración de las rutas
+const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const publicationRoutes = require("./routes/publication");
 const followRoutes = require("./routes/follow");
@@ -39,6 +63,7 @@ const storyRoutes = require("./routes/story");
 const messageRoutes = require("./routes/message");
 
 // Prefijos para las rutas
+app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/publication", publicationRoutes);
 app.use("/api/follow", followRoutes);

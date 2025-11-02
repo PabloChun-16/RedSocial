@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 const User = require("../models/user");
-const { sanitizeUser } = require("./user");
+const { formatUserResponse } = require("./user");
+const { resolveImageUrl } = require("../utils/image");
+const DEFAULT_AVATAR = "iconobase.png";
+
 const { getUnreadMessagesCount } = require("../services/messages");
 
 const isObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
@@ -68,10 +71,10 @@ const followUser = async (req, res) => {
   try{
     const [currentUser, targetUser] = await Promise.all([
       User.findById(currentUserId)
-        .select("name surname nick email role image bio notifications followers following followersCount followingCount")
+        .select("name surname nick email role imageKey bio notifications followers following followersCount followingCount")
         .exec(),
       User.findById(targetId)
-        .select("name surname nick role image bio followers following followersCount followingCount")
+        .select("name surname nick role imageKey bio followers following followersCount followingCount")
         .exec()
     ]);
 
@@ -118,6 +121,21 @@ const followUser = async (req, res) => {
     const relationship = getRelationship(currentUser, targetUser);
     const messagesUnread = await getUnreadMessagesCount(currentUserId);
 
+    const targetImageUrl = await resolveImageUrl({
+      key: targetUser.imageKey,
+      legacy: targetUser.image,
+      excludeLegacy: [DEFAULT_AVATAR]
+    });
+    const targetPayload = {
+      id: targetIdStr,
+      nick: targetUser.nick,
+      name: targetUser.name,
+      imageUrl: targetImageUrl,
+      image: targetImageUrl || DEFAULT_AVATAR
+    };
+
+    const currentUserPayload = await formatUserResponse(currentUser, { messagesUnread });
+
     return res.status(200).json({
       status: "success",
       message: alreadyFollowing ? "Ya sigues a este usuario" : "Ahora sigues a este usuario",
@@ -126,13 +144,8 @@ const followUser = async (req, res) => {
         currentUser: buildCountsPayload(currentUser),
         target: buildCountsPayload(targetUser)
       },
-      target: {
-        id: targetIdStr,
-        nick: targetUser.nick,
-        name: targetUser.name,
-        image: targetUser.image
-      },
-      currentUser: sanitizeUser(currentUser, { messagesUnread })
+      target: targetPayload,
+      currentUser: currentUserPayload
     });
   }catch(error){
     return res.status(500).json({
@@ -161,10 +174,10 @@ const unfollowUser = async (req, res) => {
   try{
     const [currentUser, targetUser] = await Promise.all([
       User.findById(currentUserId)
-        .select("name surname nick email role image bio notifications followers following followersCount followingCount")
+        .select("name surname nick email role imageKey bio notifications followers following followersCount followingCount")
         .exec(),
       User.findById(targetId)
-        .select("name surname nick role image bio followers following followersCount followingCount")
+        .select("name surname nick role imageKey bio followers following followersCount followingCount")
         .exec()
     ]);
 
@@ -210,6 +223,21 @@ const unfollowUser = async (req, res) => {
     const relationship = getRelationship(currentUser, targetUser);
     const messagesUnread = await getUnreadMessagesCount(currentUserId);
 
+    const targetImageUrl = await resolveImageUrl({
+      key: targetUser.imageKey,
+      legacy: targetUser.image,
+      excludeLegacy: [DEFAULT_AVATAR]
+    });
+    const targetPayload = {
+      id: targetIdStr,
+      nick: targetUser.nick,
+      name: targetUser.name,
+      imageUrl: targetImageUrl,
+      image: targetImageUrl || DEFAULT_AVATAR
+    };
+
+    const currentUserPayload = await formatUserResponse(currentUser, { messagesUnread });
+
     return res.status(200).json({
       status: "success",
       message: changed ? "Has dejado de seguir a este usuario" : "No estabas siguiendo a este usuario",
@@ -218,13 +246,8 @@ const unfollowUser = async (req, res) => {
         currentUser: buildCountsPayload(currentUser),
         target: buildCountsPayload(targetUser)
       },
-      target: {
-        id: targetIdStr,
-        nick: targetUser.nick,
-        name: targetUser.name,
-        image: targetUser.image
-      },
-      currentUser: sanitizeUser(currentUser, { messagesUnread })
+      target: targetPayload,
+      currentUser: currentUserPayload
     });
   }catch(error){
     return res.status(500).json({

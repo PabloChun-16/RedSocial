@@ -1,13 +1,12 @@
-const fs = require("fs");
-const path = require("path");
 const bcrypt = require("bcrypt");
 const User = require("../models/user");
 const Publication = require("../models/publication");
 const jwt = require("../services/jwt");
 const { getUnreadMessagesCount } = require("../services/messages");
+const { uploadBufferToS3, deleteFileFromS3 } = require("../utils/s3");
+const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
 
-const resolvePublicPath = (relativePath = "") =>
-  path.join(__dirname, "..", "public", relativePath);
+const DEFAULT_AVATAR = "iconobase.png";
 
 const getFollowCounts = (source = {}) => {
   const followersArray = Array.isArray(source.followers) ? source.followers : [];
@@ -35,14 +34,35 @@ const sanitizeUser = (doc, extras = {}) => {
   const unreadCount = notifications.filter((item) => !item?.isRead).length;
   const { followersCount, followingCount } = getFollowCounts(obj);
   const extrasObj = typeof extras === "object" && extras !== null ? extras : {};
+  const legacyImage =
+    typeof obj.image === "string" && obj.image.trim() ? obj.image.trim() : null;
+  const normalizedLegacy =
+    legacyImage && legacyImage !== DEFAULT_AVATAR
+      ? (legacyImage.startsWith("/") ? legacyImage : `/${legacyImage}`)
+      : null;
+  const imageKey =
+    typeof obj.imageKey === "string" && obj.imageKey.trim() ? obj.imageKey.trim() : null;
+  const hasExtrasUrl =
+    typeof extrasObj.imageUrl === "string" && extrasObj.imageUrl.trim() ? true : false;
+  const imageUrl = hasExtrasUrl
+    ? extrasObj.imageUrl
+    : !imageKey && normalizedLegacy
+    ? normalizedLegacy
+    : null;
+  const picture =
+    typeof extrasObj.picture === "string" && extrasObj.picture.trim()
+      ? extrasObj.picture.trim()
+      : typeof obj.picture === "string" && obj.picture.trim()
+      ? obj.picture.trim()
+      : imageUrl;
   return {
     id: obj._id?.toString() ?? obj.id,
     name: obj.name,
     surname: obj.surname,
     nick: obj.nick,
     email: obj.email,
+    provider: obj.provider || (obj.googleId ? "google" : "local"),
     role: obj.role,
-    image: obj.image || "iconobase.png",
     bio: obj.bio,
     followers: followersCount,
     following: followingCount,
@@ -57,7 +77,11 @@ const sanitizeUser = (doc, extras = {}) => {
         ? extrasObj.messagesUnread
         : typeof obj.messagesUnread === "number"
         ? obj.messagesUnread
-        : 0
+        : 0,
+    picture,
+    imageKey,
+    imageUrl,
+    image: imageUrl || DEFAULT_AVATAR
   };
 };
 
@@ -70,11 +94,22 @@ const normalizeUserRef = (value) => {
   }
   if(typeof source === "object" && source !== null){
     const id = source._id?.toString?.() ?? source.id ?? value?.toString?.();
+    const legacyImage =
+      typeof source.image === "string" && source.image.trim() ? source.image.trim() : null;
+    const normalizedLegacy =
+      legacyImage && legacyImage !== DEFAULT_AVATAR
+        ? (legacyImage.startsWith("/") ? legacyImage : `/${legacyImage}`)
+        : null;
+    const imageKey =
+      typeof source.imageKey === "string" && source.imageKey.trim()
+        ? source.imageKey.trim()
+        : null;
     return {
       id,
       nick: source.nick,
       name: source.name,
-      image: source.image
+      imageKey,
+      legacyImage: normalizedLegacy
     };
   }
   return null;
@@ -90,9 +125,14 @@ const sanitizeNotification = (doc) => {
       typeof data.publication.toObject === "function"
         ? data.publication.toObject({ virtuals: false })
         : data.publication;
+    const legacyImage =
+      typeof raw.image === "string" && raw.image.trim() ? raw.image.trim() : null;
+    const imageKey =
+      typeof raw.imageKey === "string" && raw.imageKey.trim() ? raw.imageKey.trim() : null;
     publication = {
       id: raw._id?.toString() ?? raw.id,
-      image: raw.image,
+      imageKey,
+      legacyImage,
       caption: raw.caption,
       owner: normalizeUserRef(raw.user)
     };
@@ -142,6 +182,21 @@ const sanitizePublicUser = (doc, currentUserId, options = {}) => {
       : typeof data.postsCount === "number"
       ? data.postsCount
       : data.stats?.posts ?? 0;
+  const legacyImage =
+    typeof data.image === "string" && data.image.trim() ? data.image.trim() : null;
+  const normalizedLegacy =
+    legacyImage && legacyImage !== DEFAULT_AVATAR
+      ? (legacyImage.startsWith("/") ? legacyImage : `/${legacyImage}`)
+      : null;
+  const imageKey =
+    typeof data.imageKey === "string" && data.imageKey.trim() ? data.imageKey.trim() : null;
+  const hasImageUrlOption =
+    typeof options.imageUrl === "string" && options.imageUrl.trim() ? true : false;
+  const imageUrl = hasImageUrlOption
+    ? options.imageUrl
+    : !imageKey && normalizedLegacy
+    ? normalizedLegacy
+    : null;
 
   const result = {
     id,
@@ -149,7 +204,14 @@ const sanitizePublicUser = (doc, currentUserId, options = {}) => {
     name: data.name,
     surname: data.surname,
     bio: data.bio,
-    image: data.image || "iconobase.png",
+    provider: data.provider || (data.googleId ? "google" : "local"),
+    picture:
+      typeof data.picture === "string" && data.picture.trim()
+        ? data.picture.trim()
+        : imageUrl,
+    image: imageUrl || DEFAULT_AVATAR,
+    imageUrl,
+    imageKey,
     role: data.role || "ROLE_USER",
     createdAt: data.created_at || data.createdAt || null,
     stats: {
@@ -168,6 +230,86 @@ const sanitizePublicUser = (doc, currentUserId, options = {}) => {
   };
   result.canFollow = !isSelf;
   return result;
+};
+
+const pickLegacyImage = (source) => {
+  if (!source || typeof source !== "object") return null;
+  if (typeof source.legacyImage === "string" && source.legacyImage.trim()) {
+    return source.legacyImage.trim();
+  }
+  if (typeof source.image === "string" && source.image.trim()) {
+    return source.image.trim();
+  }
+  return null;
+};
+
+const LEGACY_EXCLUDES = [DEFAULT_AVATAR];
+
+const resolveUserImage = async (source) => {
+  if (!source) return null;
+  const key = source.imageKey || null;
+  const legacy = pickLegacyImage(source);
+  return resolveImageUrl({ key, legacy, excludeLegacy: LEGACY_EXCLUDES });
+};
+
+const decorateUserReference = async (reference) => {
+  if (!reference) return null;
+  const imageUrl = await resolveUserImage(reference);
+  const decorated = {
+    ...reference,
+    imageUrl,
+    image: imageUrl || DEFAULT_AVATAR
+  };
+  stripImageSecrets(decorated);
+  return decorated;
+};
+
+const formatUserResponse = async (user, extras = {}) => {
+  if (!user) return null;
+  const imageUrl = await resolveUserImage(user);
+  const sanitized = sanitizeUser(user, { ...extras, imageUrl });
+  stripImageSecrets(sanitized);
+  return sanitized;
+};
+
+const formatPublicUserResponse = async (user, currentUserId, options = {}) => {
+  if (!user) return null;
+  const imageUrl = await resolveUserImage(user);
+  const sanitized = sanitizePublicUser(user, currentUserId, { ...options, imageUrl });
+  stripImageSecrets(sanitized);
+  return sanitized;
+};
+
+const decorateNotificationItem = async (notification) => {
+  if (!notification) return null;
+  if (notification.actor) {
+    notification.actor = await decorateUserReference(notification.actor);
+  }
+  if (notification.publication) {
+    const publication = notification.publication;
+    const imageUrl = await resolveImageUrl({
+      key: publication.imageKey,
+      legacy: pickLegacyImage(publication)
+    });
+    publication.imageUrl = imageUrl;
+    publication.image = imageUrl;
+    if (publication.owner) {
+      publication.owner = await decorateUserReference(publication.owner);
+    }
+    stripImageSecrets(publication);
+  }
+  if (notification.conversation) {
+    const conversation = notification.conversation;
+    if (Array.isArray(conversation.participants)) {
+      const decoratedParticipants = await Promise.all(
+        conversation.participants.map(decorateUserReference)
+      );
+      conversation.participants = decoratedParticipants.filter(Boolean);
+    }
+    stripImageSecrets(conversation);
+  }
+  stripImageSecrets(notification);
+  return notification;
 };
 
 // Ruta de prueba (la de siempre)
@@ -215,12 +357,13 @@ const register = async (req, res) => {
 
     // Guardar usuario en la BD
     const userStored = await user_to_save.save();
+    const userResponse = await formatUserResponse(userStored);
 
     // Devolver resultado
     return res.status(200).json({
       status: "success",
       message: "Usuario registrado correctamente",
-      user: userStored
+      user: userResponse
     });
 
   } catch (error) {
@@ -247,7 +390,7 @@ const login = async (req, res) => {
 
     // Buscar en la BD si existe el email
     const user = await User.findOne({ email: params.email })
-      .select({ name: 1, surname: 1, nick: 1, email: 1, role: 1, image: 1, password: 1, bio: 1, notifications: 1 })
+      .select({ name: 1, surname: 1, nick: 1, email: 1, role: 1, imageKey: 1, password: 1, bio: 1, notifications: 1 })
       .exec();
 
     if (!user) {
@@ -274,12 +417,12 @@ const login = async (req, res) => {
     // Excluir la contraseña antes de devolver
     user.password = undefined;
 
-    const sanitized = sanitizeUser(user, { messagesUnread });
+    const userResponse = await formatUserResponse(user, { messagesUnread });
     // Devolver los datos del usuario (y el token)
     return res.status(200).send({
       status: "success",
       message: "Login exitoso",
-      user: sanitized,
+      user: userResponse,
       token
     });
 
@@ -295,11 +438,12 @@ const login = async (req, res) => {
 // Listar todos los usuarios (sin contraseña)
 const listUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password"); // excluye el campo password
+    const userDocs = await User.find().select("-password").exec(); // excluye el campo password
+    const users = await Promise.all(userDocs.map((doc) => formatUserResponse(doc)));
     return res.status(200).json({
       status: "success",
       count: users.length,
-      users
+      users: users.filter(Boolean)
     });
   } catch (error) {
     return res.status(500).json({
@@ -310,13 +454,9 @@ const listUsers = async (req, res) => {
   }
 };
 
-const removeAvatarFile = (storedPath) => {
-  if(!storedPath || storedPath === "iconobase.png") return;
-  const absolute = resolvePublicPath(storedPath);
-  fs.promises
-    .access(absolute, fs.constants.F_OK)
-    .then(() => fs.promises.unlink(absolute))
-    .catch(() => {});
+const removeAvatarFile = async (key) => {
+  if(!key) return;
+  await deleteFileFromS3(key);
 };
 
 const getProfile = async (req, res) => {
@@ -329,9 +469,10 @@ const getProfile = async (req, res) => {
       });
     }
     const messagesUnread = await getUnreadMessagesCount(user._id);
+    const userResponse = await formatUserResponse(user, { messagesUnread });
     return res.status(200).json({
       status: "success",
-      user: sanitizeUser(user, { messagesUnread })
+      user: userResponse
     });
   }catch(error){
     return res.status(500).json({
@@ -346,20 +487,27 @@ const updateProfile = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const desiredNickRaw = typeof req.body.nick === "string" ? req.body.nick.trim() : undefined;
   const userId = req.user.id;
-  const uploadedAvatar = req.file?.filename
-    ? `uploads/avatars/${req.file.filename}`
-    : null;
+  let uploadedAvatarKey = null;
 
-  const cleanupUploaded = () => {
-    if(uploadedAvatar){
-      removeAvatarFile(uploadedAvatar);
+  const cleanupUploaded = async () => {
+    if(uploadedAvatarKey){
+      await deleteFileFromS3(uploadedAvatarKey);
+      uploadedAvatarKey = null;
     }
   };
 
   try{
+    if(req.file){
+      uploadedAvatarKey = await uploadBufferToS3({
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype,
+        folder: "uploads/avatars"
+      });
+    }
+
     const user = await User.findById(userId).exec();
     if(!user){
-      cleanupUploaded();
+      await cleanupUploaded();
       return res.status(404).json({
         status: "error",
         message: "Usuario no encontrado"
@@ -368,7 +516,7 @@ const updateProfile = async (req, res) => {
 
     if(desiredNickRaw !== undefined){
       if(!desiredNickRaw){
-        cleanupUploaded();
+        await cleanupUploaded();
         return res.status(400).json({
           status: "error",
           message: "El nick no puede estar vacío"
@@ -381,7 +529,7 @@ const updateProfile = async (req, res) => {
           nick: desiredNick
         }).select("_id");
         if(nickExists){
-          cleanupUploaded();
+          await cleanupUploaded();
           return res.status(409).json({
             status: "error",
             message: "El nick ya está en uso por otro usuario"
@@ -393,7 +541,7 @@ const updateProfile = async (req, res) => {
 
     if(newPassword || currentPassword){
       if(!currentPassword || !newPassword){
-        cleanupUploaded();
+        await cleanupUploaded();
         return res.status(400).json({
           status: "error",
           message: "Debes indicar la contraseña actual y la nueva"
@@ -401,7 +549,7 @@ const updateProfile = async (req, res) => {
       }
       const validPwd = await bcrypt.compare(currentPassword, user.password);
       if(!validPwd){
-        cleanupUploaded();
+        await cleanupUploaded();
         return res.status(400).json({
           status: "error",
           message: "La contraseña actual no es correcta"
@@ -410,16 +558,17 @@ const updateProfile = async (req, res) => {
       user.password = await bcrypt.hash(newPassword, 10);
     }
 
-    if(uploadedAvatar){
-      if(user.image && user.image !== "iconobase.png"){
-        removeAvatarFile(user.image);
+    if(uploadedAvatarKey){
+      if(user.imageKey){
+        await removeAvatarFile(user.imageKey);
       }
-      user.image = uploadedAvatar;
+      user.imageKey = uploadedAvatarKey;
+      uploadedAvatarKey = null;
     }
 
     const saved = await user.save();
     const messagesUnread = await getUnreadMessagesCount(saved._id);
-    const sanitized = sanitizeUser(saved, { messagesUnread });
+    const sanitized = await formatUserResponse(saved, { messagesUnread });
 
     return res.status(200).json({
       status: "success",
@@ -427,7 +576,7 @@ const updateProfile = async (req, res) => {
       user: sanitized
     });
   }catch(error){
-    cleanupUploaded();
+    await cleanupUploaded();
     return res.status(500).json({
       status: "error",
       message: "No se pudo actualizar el perfil",
@@ -440,16 +589,16 @@ const listNotifications = async (req, res) => {
   try{
     const user = await User.findById(req.user.id)
       .select("notifications")
-      .populate("notifications.actor", "nick name image")
+      .populate("notifications.actor", "nick name imageKey")
       .populate({
         path: "notifications.publication",
-        select: "image caption user",
-        populate: { path: "user", select: "nick name image" }
+        select: "imageKey caption user",
+        populate: { path: "user", select: "nick name imageKey" }
       })
       .populate({
         path: "notifications.conversation",
         select: "participants updatedAt",
-        populate: { path: "participants", select: "nick name image" }
+        populate: { path: "participants", select: "nick name imageKey" }
       })
       .exec();
 
@@ -460,9 +609,10 @@ const listNotifications = async (req, res) => {
       });
     }
 
-    const items = Array.isArray(user.notifications)
+    const rawItems = Array.isArray(user.notifications)
       ? user.notifications.map(sanitizeNotification)
       : [];
+    const items = (await Promise.all(rawItems.map(decorateNotificationItem))).filter(Boolean);
 
     return res.status(200).json({
       status: "success",
@@ -498,7 +648,7 @@ const markNotificationsAsRead = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id)
-      .select("notifications")
+      .select("notifications imageKey image")
       .exec();
     if(!user){
       return res.status(404).json({
@@ -506,7 +656,7 @@ const markNotificationsAsRead = async (req, res) => {
         message: "Usuario no encontrado"
       });
     }
-    const sanitized = sanitizeUser(user);
+    const sanitized = await formatUserResponse(user);
 
     return res.status(200).json({
       status: "success",
@@ -558,8 +708,8 @@ const getPublicProfile = async (req, res) => {
 
     const targetId = targetUser._id?.toString?.();
     const postsCount = await Publication.countDocuments({ user: targetId }).exec();
-    const payload = sanitizePublicUser(targetUser, currentUserId, { postsCount });
-    if(payload.isSelf && identifier !== "me"){
+    const payload = await formatPublicUserResponse(targetUser, currentUserId, { postsCount });
+    if(payload?.isSelf && identifier !== "me"){
       payload.canFollow = false;
     }
 
@@ -578,8 +728,6 @@ const getPublicProfile = async (req, res) => {
 
 module.exports = {
   pruebaUser,
-  register,
-  login,
   listUsers,
   getProfile,
   updateProfile,
@@ -587,5 +735,8 @@ module.exports = {
   markNotificationsAsRead,
   getPublicProfile,
   sanitizeUser,
-  sanitizePublicUser
+  sanitizePublicUser,
+  formatUserResponse,
+  formatPublicUserResponse,
+  decorateUserReference
 };

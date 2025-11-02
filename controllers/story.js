@@ -1,8 +1,8 @@
-const path = require("path");
-const fs = require("fs/promises");
 const Story = require("../models/story");
+const { uploadBufferToS3, deleteFileFromS3 } = require("../utils/s3");
+const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
 
-const PUBLIC_ROOT = path.join(__dirname, "..", "public");
+const DEFAULT_AVATAR = "iconobase.png";
 
 const DEFAULT_ADJUSTMENTS = {
   brightness: 1,
@@ -110,32 +110,6 @@ const parseTextBlocks = (raw) => {
     .filter(Boolean);
 };
 
-const ensureRelativePath = (absolutePath) => {
-  if (!absolutePath) return null;
-  if (absolutePath.startsWith("/")) return absolutePath;
-  const relative = path.relative(PUBLIC_ROOT, absolutePath);
-  return `/${relative.split(path.sep).join("/")}`;
-};
-
-const resolveAbsolutePath = (maybeRelative) => {
-  if (!maybeRelative) return null;
-  const trimmed = maybeRelative.startsWith("/")
-    ? maybeRelative.slice(1)
-    : maybeRelative;
-  return path.join(PUBLIC_ROOT, trimmed);
-};
-
-const removeFileIfExists = async (filePath) => {
-  if (!filePath) return;
-  try {
-    await fs.unlink(filePath);
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.warn("No se pudo eliminar el archivo de historia", error.message);
-    }
-  }
-};
-
 const normalizeUserRef = (value) => {
   if (!value) return null;
   const source =
@@ -147,34 +121,59 @@ const normalizeUserRef = (value) => {
   }
   if (typeof source === "object" && source !== null) {
     const id = source._id?.toString?.() ?? source.id ?? value?.toString?.();
+    const legacyImage =
+      typeof source.image === "string" && source.image.trim() ? source.image.trim() : null;
+    const normalizedLegacy = legacyImage
+      ? legacyImage.startsWith("/")
+        ? legacyImage
+        : `/${legacyImage}`
+      : null;
     return {
       id,
       nick: source.nick,
       name: source.name,
-      image: source.image
+      imageKey:
+        typeof source.imageKey === "string" && source.imageKey.trim()
+          ? source.imageKey.trim()
+          : null,
+      legacyImage: normalizedLegacy
     };
   }
   return null;
 };
 
-const sanitizeStory = (doc, currentUserId) => {
+const sanitizeStory = (doc, currentUserId, options = {}) => {
   if (!doc) return null;
   const data =
     typeof doc.toObject === "function"
       ? doc.toObject({ virtuals: false })
       : doc;
   const owner = normalizeUserRef(data.user);
-  const relativeImage =
-    typeof data.image === "string"
-      ? data.image.startsWith("/")
-        ? data.image
-        : `/${data.image}`
+  const legacyImage =
+    typeof data.image === "string" && data.image.trim() ? data.image.trim() : null;
+  const normalizedLegacy = legacyImage
+    ? legacyImage.startsWith("/")
+      ? legacyImage
+      : `/${legacyImage}`
+    : null;
+  const imageKey =
+    typeof data.imageKey === "string" && data.imageKey.trim()
+      ? data.imageKey.trim()
       : null;
+  const hasImageOption =
+    typeof options.imageUrl === "string" && options.imageUrl.trim() ? true : false;
+  const imageUrl = hasImageOption
+    ? options.imageUrl
+    : !imageKey && normalizedLegacy
+    ? normalizedLegacy
+    : null;
   const adjustments = normalizeAdjustments(data.adjustments);
   const textBlocks = Array.isArray(data.textBlocks) ? data.textBlocks : [];
   return {
     id: data._id?.toString() ?? data.id,
-    image: relativeImage,
+    image: imageUrl,
+    imageUrl,
+    imageKey,
     filter:
       typeof data.filter === "string" && data.filter.trim()
         ? data.filter.trim().toLowerCase()
@@ -189,26 +188,78 @@ const sanitizeStory = (doc, currentUserId) => {
   };
 };
 
+const pickLegacyImage = (source) => {
+  if (!source || typeof source !== "object") return null;
+  if (typeof source.image === "string" && source.image.trim()) {
+    return source.image.trim();
+  }
+  if (typeof source.legacyImage === "string" && source.legacyImage.trim()) {
+    return source.legacyImage.trim();
+  }
+  return null;
+};
+
+const decorateUserReference = async (reference) => {
+  if (!reference) return null;
+  const imageUrl = await resolveImageUrl({
+    key: reference.imageKey,
+    legacy: pickLegacyImage(reference),
+    excludeLegacy: [DEFAULT_AVATAR]
+  });
+  const decorated = {
+    ...reference,
+    imageUrl,
+    image: imageUrl || DEFAULT_AVATAR
+  };
+  stripImageSecrets(decorated);
+  return decorated;
+};
+
+const formatStoryResponse = async (story, currentUserId) => {
+  if (!story) return null;
+  const data = sanitizeStory(story, currentUserId);
+  if (!data) return null;
+  const imageUrl = await resolveImageUrl({
+    key: data.imageKey,
+    legacy: pickLegacyImage(story)
+  });
+  data.imageUrl = imageUrl;
+  data.image = imageUrl;
+  if (data.owner) {
+    data.owner = await decorateUserReference(data.owner);
+  }
+  stripImageSecrets(data);
+  return data;
+};
+
+const formatStoryCollection = async (stories, currentUserId) => {
+  const list = Array.isArray(stories) ? stories : [];
+  const formatted = await Promise.all(list.map((story) => formatStoryResponse(story, currentUserId)));
+  return formatted.filter(Boolean);
+};
+
 const cleanupExpiredStories = async () => {
   const now = new Date();
   const expired = await Story.find(
     {
       expiresAt: { $lte: now }
     },
-    { image: 1 }
+    { imageKey: 1 }
   ).exec();
   if (!expired.length) return;
   const ids = expired.map((story) => story._id);
   await Story.deleteMany({ _id: { $in: ids } }).exec();
   await Promise.all(
     expired.map(async (story) => {
-      const absPath = resolveAbsolutePath(story.image);
-      await removeFileIfExists(absPath);
+      if(story?.imageKey){
+        await deleteFileFromS3(story.imageKey);
+      }
     })
   );
 };
 
 const createStory = async (req, res) => {
+  let imageKey = null;
   try {
     await cleanupExpiredStories();
     if (!req.file) {
@@ -223,11 +274,15 @@ const createStory = async (req, res) => {
     const textBlocks = parseTextBlocks(req.body.textBlocks);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    const relativeImage = ensureRelativePath(req.file.path);
+    imageKey = await uploadBufferToS3({
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+      folder: "uploads/stories"
+    });
 
     const story = await Story.create({
       user: req.user.id,
-      image: relativeImage,
+      imageKey,
       filter,
       adjustments,
       textBlocks,
@@ -236,16 +291,20 @@ const createStory = async (req, res) => {
 
     const populated = await story.populate({
       path: "user",
-      select: "nick name image"
+      select: "nick name imageKey"
     });
+    const formatted = await formatStoryResponse(populated, req.user.id);
 
     return res.status(201).json({
       status: "success",
       message: "Historia publicada correctamente",
-      story: sanitizeStory(populated, req.user.id)
+      story: formatted
     });
   } catch (error) {
     console.error("createStory error", error);
+    if (imageKey) {
+      await deleteFileFromS3(imageKey);
+    }
     return res.status(500).json({
       status: "error",
       message: "No se pudo crear la historia",
@@ -262,25 +321,25 @@ const listStories = async (req, res) => {
       visibility: "public",
       expiresAt: { $gt: now }
     })
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .sort({ createdAt: 1 })
       .exec();
 
+    const normalizedStories = await formatStoryCollection(stories, req.user?.id);
+
     const grouped = [];
     const groupMap = new Map();
-    stories.forEach((story) => {
-      const normalized = sanitizeStory(story, req.user?.id);
-      if (!normalized) return;
-      const ownerId = normalized.owner?.id || "unknown";
+    normalizedStories.forEach((story) => {
+      const ownerId = story.owner?.id || "unknown";
       if (!groupMap.has(ownerId)) {
         const group = {
-          owner: normalized.owner,
+          owner: story.owner,
           stories: []
         };
         groupMap.set(ownerId, group);
         grouped.push(group);
       }
-      groupMap.get(ownerId).stories.push(normalized);
+      groupMap.get(ownerId).stories.push(story);
     });
 
     return res.status(200).json({
@@ -306,12 +365,13 @@ const listSelfStories = async (req, res) => {
       user: req.user.id,
       expiresAt: { $gt: now }
     })
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .sort({ createdAt: 1 })
       .exec();
+    const items = await formatStoryCollection(stories, req.user.id);
     return res.status(200).json({
       status: "success",
-      items: stories.map((story) => sanitizeStory(story, req.user.id))
+      items
     });
   } catch (error) {
     return res.status(500).json({
@@ -338,9 +398,11 @@ const deleteStory = async (req, res) => {
         message: "No tienes permisos para eliminar esta historia"
       });
     }
-    const imagePath = resolveAbsolutePath(story.image);
+    const imageKey = story.imageKey;
     await Story.deleteOne({ _id: id }).exec();
-    await removeFileIfExists(imagePath);
+    if(imageKey){
+      await deleteFileFromS3(imageKey);
+    }
     return res.status(200).json({
       status: "success",
       message: "Historia eliminada correctamente"

@@ -5,6 +5,8 @@
   <title>Mi Red Social · Auth</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/css/styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
 </head>
 
 <body class="auth theme-night" style="--bg-image: url('/media/fondo2.jpg');">
@@ -75,6 +77,10 @@
 
           <!-- Login -->
           <form id="form-login" class="panel active" autocomplete="on" aria-hidden="false">
+            <!-- TODO: Botón Google en pestaña Iniciar sesión -->
+            <div class="social-auth" aria-live="polite">
+              <div id="google-login-btn" class="social-auth__button"></div>
+            </div>
             <div class="input-row">
               <span class="icon user" aria-hidden="true"></span>
               <input id="login-email" name="email" type="email" required placeholder="Ingresa tu email" />
@@ -98,6 +104,10 @@
 
           <!-- Registro -->
           <form id="form-register" class="panel" autocomplete="off" aria-hidden="true">
+            <!-- TODO: Botón Google en pestaña Crear cuenta -->
+            <div class="social-auth" aria-live="polite">
+              <div id="google-register-btn" class="social-auth__button"></div>
+            </div>
             <div class="grid-2 register-grid">
               <div class="field">
                 <label for="reg-name">Nombre</label>
@@ -115,6 +125,10 @@
                 <label for="reg-password">Contraseña</label>
                 <input id="reg-password" name="password" type="password" required placeholder="Mín. 6 caracteres" />
               </div>
+            </div>
+            <!-- TODO: Widget reCAPTCHA en registro -->
+            <div class="recaptcha-wrapper">
+              <div id="register-recaptcha" class="recaptcha-placeholder" aria-live="polite"></div>
             </div>
 
             <button class="btn-primary" type="submit">Crear cuenta</button>

@@ -378,6 +378,34 @@ body.is-theme-transition[data-theme-transition="day"] .video-fader{
   to  { opacity:1; transform: translateY(0)   scale(1); }
 }
 
+.social-auth{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin:0 0 16px;
+}
+.social-auth__button{
+  width:100%;
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.social-auth__button > div{
+  width:100%;
+}
+.recaptcha-wrapper{
+  margin:12px 0 18px;
+  display:flex;
+  justify-content:center;
+}
+.recaptcha-placeholder{
+  width:100%;
+  display:flex;
+  justify-content:center;
+  min-height:78px;
+}
+
 /* ====== Inputs ====== */
 .input-row{
   display:grid; grid-template-columns:44px 1fr 44px; align-items:center; gap:10px;

@@ -1,9 +1,10 @@
-const path = require("path");
 const Publication = require("../models/publication");
 const User = require("../models/user");
+const { uploadBufferToS3, deleteFileFromS3 } = require("../utils/s3");
+const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
 
-const PUBLIC_ROOT = path.join(__dirname, "..", "public");
 const MAX_NOTIFICATIONS = 50;
+const DEFAULT_AVATAR = "iconobase.png";
 
 const DEFAULT_ADJUSTMENTS = {
   brightness: 1,
@@ -39,11 +40,22 @@ const normalizeUserRef = (value) => {
   }
   if(typeof source === "object" && source !== null){
     const id = source._id?.toString?.() ?? source.id ?? value?.toString?.();
+    const legacyImage =
+      typeof source.image === "string" && source.image.trim() ? source.image.trim() : null;
+    const normalizedLegacy = legacyImage
+      ? legacyImage.startsWith("/")
+        ? legacyImage
+        : `/${legacyImage}`
+      : null;
     return {
       id,
       nick: source.nick,
       name: source.name,
-      image: source.image
+      imageKey:
+        typeof source.imageKey === "string" && source.imageKey.trim()
+          ? source.imageKey.trim()
+          : null,
+      legacyImage: normalizedLegacy
     };
   }
   return null;
@@ -54,12 +66,24 @@ const sanitizePublication = (doc, currentUserId, options = {}) => {
   const data = typeof doc.toObject === "function" ? doc.toObject({ virtuals: false }) : doc;
   const owner = normalizeUserRef(data.user) ?? { id: data.user?.toString?.() ?? data.user };
 
-  const relativeImage =
-    typeof data.image === "string"
-      ? data.image.startsWith("/")
-        ? data.image
-        : `/${data.image}`
+  const legacyImage =
+    typeof data.image === "string" && data.image.trim() ? data.image.trim() : null;
+  const normalizedLegacy = legacyImage
+    ? legacyImage.startsWith("/")
+      ? legacyImage
+      : `/${legacyImage}`
+    : null;
+  const imageKey =
+    typeof data.imageKey === "string" && data.imageKey.trim()
+      ? data.imageKey.trim()
       : null;
+  const hasImageOption =
+    typeof options.imageUrl === "string" && options.imageUrl.trim() ? true : false;
+  const imageUrl = hasImageOption
+    ? options.imageUrl
+    : !imageKey && normalizedLegacy
+    ? normalizedLegacy
+    : null;
 
   const likedBy = Array.isArray(data.likedBy)
     ? data.likedBy.map((item) => item?.toString?.() ?? item)
@@ -87,7 +111,9 @@ const sanitizePublication = (doc, currentUserId, options = {}) => {
 
   const result = {
     id: data._id?.toString() ?? data.id,
-    image: relativeImage,
+    image: imageUrl,
+    imageUrl,
+    imageKey,
     caption: data.caption || "",
     tags: Array.isArray(data.tags) ? data.tags : [],
     filter:
@@ -108,6 +134,71 @@ const sanitizePublication = (doc, currentUserId, options = {}) => {
     result.comments = normalizedComments || [];
   }
   return result;
+};
+
+const pickLegacyImage = (source) => {
+  if (!source || typeof source !== "object") return null;
+  if (typeof source.image === "string" && source.image.trim()) {
+    return source.image.trim();
+  }
+  if (typeof source.legacyImage === "string" && source.legacyImage.trim()) {
+    return source.legacyImage.trim();
+  }
+  return null;
+};
+
+const decorateUserReference = async (reference) => {
+  if (!reference) return null;
+  const imageUrl = await resolveImageUrl({
+    key: reference.imageKey,
+    legacy: pickLegacyImage(reference),
+    excludeLegacy: [DEFAULT_AVATAR]
+  });
+  const decorated = {
+    ...reference,
+    imageUrl,
+    image: imageUrl || DEFAULT_AVATAR
+  };
+  stripImageSecrets(decorated);
+  return decorated;
+};
+
+const decorateComment = async (comment) => {
+  if (!comment) return null;
+  const author = await decorateUserReference(comment.author);
+  stripImageSecrets(comment);
+  return {
+    ...comment,
+    author
+  };
+};
+
+const formatPublicationResponse = async (doc, currentUserId, options = {}) => {
+  if (!doc) return null;
+  const publication = sanitizePublication(doc, currentUserId, options);
+  if (!publication) return null;
+  const imageUrl = await resolveImageUrl({
+    key: publication.imageKey,
+    legacy: pickLegacyImage(doc)
+  });
+  publication.imageUrl = imageUrl;
+  publication.image = imageUrl;
+  if (publication.owner) {
+    publication.owner = await decorateUserReference(publication.owner);
+  }
+  if (Array.isArray(publication.comments)) {
+    publication.comments = (
+      await Promise.all(publication.comments.map(decorateComment))
+    ).filter(Boolean);
+  }
+  stripImageSecrets(publication);
+  return publication;
+};
+
+const formatPublicationCollection = async (docs, currentUserId, options = {}) => {
+  const list = Array.isArray(docs) ? docs : [];
+  const formatted = await Promise.all(list.map((doc) => formatPublicationResponse(doc, currentUserId, options)));
+  return formatted.filter(Boolean);
 };
 
 const pushNotification = async ({ targetUserId, type, actorId, actorName, actorNick, publicationId, message }) => {
@@ -167,13 +258,6 @@ const parseAdjustments = (raw) => {
   return { ...DEFAULT_ADJUSTMENTS };
 };
 
-const ensureRelativePath = (absolutePath) => {
-  if (!absolutePath) return null;
-  if (absolutePath.startsWith("/")) return absolutePath;
-  const relative = path.relative(PUBLIC_ROOT, absolutePath);
-  return `/${relative.split(path.sep).join("/")}`;
-};
-
 const pruebaPublication = (req, res) => {
   return res.status(200).send({
     message: "Mensaje de prueba desde el controlador de Publication"
@@ -181,25 +265,31 @@ const pruebaPublication = (req, res) => {
 };
 
 const createPublication = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        status: "error",
-        message: "Debes subir una imagen para crear la publicación"
-      });
-    }
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "Debes subir una imagen para crear la publicación"
+    });
+  }
 
+  let imageKey = null;
+
+  try {
     const caption = req.body.caption?.trim() || "";
     const tags = parseTags(req.body.tags || "");
     const filter = req.body.filter?.toString?.().trim().toLowerCase() || "original";
     const visibility = req.body.visibility === "friends" ? "friends" : "public";
     const adjustments = parseAdjustments(req.body.adjustments);
 
-    const relativeImage = ensureRelativePath(req.file.path);
+    imageKey = await uploadBufferToS3({
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+      folder: "uploads/posts"
+    });
 
     const publication = await Publication.create({
       user: req.user.id,
-      image: relativeImage,
+      imageKey,
       caption,
       tags,
       filter,
@@ -209,15 +299,19 @@ const createPublication = async (req, res) => {
 
     const populated = await publication.populate({
       path: "user",
-      select: "nick name image"
+      select: "nick name imageKey"
     });
+    const formatted = await formatPublicationResponse(populated, req.user.id);
 
     return res.status(201).json({
       status: "success",
       message: "Publicación creada correctamente",
-      publication: sanitizePublication(populated, req.user.id)
+      publication: formatted
     });
   } catch (error) {
+    if (imageKey) {
+      await deleteFileFromS3(imageKey);
+    }
     return res.status(500).json({
       status: "error",
       message: "No se pudo crear la publicación",
@@ -233,14 +327,16 @@ const listFeed = async (req, res) => {
       user: { $ne: req.user.id },
       visibility: "public"
     })
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
 
+    const items = await formatPublicationCollection(posts, req.user.id);
+
     return res.status(200).json({
       status: "success",
-      items: posts.map((pub) => sanitizePublication(pub, req.user.id))
+      items
     });
   } catch (error) {
     return res.status(500).json({
@@ -257,13 +353,15 @@ const listByUser = async (req, res) => {
     const posts = await Publication.find({
       user: targetId
     })
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .sort({ createdAt: -1 })
       .exec();
 
+    const items = await formatPublicationCollection(posts, req.user.id);
+
     return res.status(200).json({
       status: "success",
-      items: posts.map((pub) => sanitizePublication(pub, req.user.id))
+      items
     });
   } catch (error) {
     return res.status(500).json({
@@ -278,8 +376,8 @@ const getPublication = async (req, res) => {
   try {
     const { id } = req.params;
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
-      .populate("comments.user", "nick name image")
+      .populate("user", "nick name imageKey")
+      .populate("comments.user", "nick name imageKey")
       .exec();
 
     if (!publication) {
@@ -289,9 +387,10 @@ const getPublication = async (req, res) => {
       });
     }
 
+    const formatted = await formatPublicationResponse(publication, req.user.id, { includeComments: true });
     return res.status(200).json({
       status: "success",
-      publication: sanitizePublication(publication, req.user.id, { includeComments: true })
+      publication: formatted
     });
   } catch (error) {
     return res.status(500).json({
@@ -307,7 +406,7 @@ const likePublication = async (req, res) => {
   const userId = req.user.id;
   try{
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .exec();
 
     if(!publication){
@@ -340,7 +439,7 @@ const likePublication = async (req, res) => {
       });
     }
 
-    const normalized = sanitizePublication(publication, userId);
+    const normalized = await formatPublicationResponse(publication, userId);
     return res.status(200).json({
       status: "success",
       publication: normalized
@@ -359,7 +458,7 @@ const unlikePublication = async (req, res) => {
   const userId = req.user.id;
   try{
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .exec();
 
     if(!publication){
@@ -382,7 +481,7 @@ const unlikePublication = async (req, res) => {
       await publication.save();
     }
 
-    const normalized = sanitizePublication(publication, userId);
+    const normalized = await formatPublicationResponse(publication, userId);
     return res.status(200).json({
       status: "success",
       publication: normalized
@@ -417,8 +516,8 @@ const addComment = async (req, res) => {
 
   try{
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
-      .populate("comments.user", "nick name image")
+      .populate("user", "nick name imageKey")
+      .populate("comments.user", "nick name imageKey")
       .exec();
 
     if(!publication){
@@ -439,9 +538,9 @@ const addComment = async (req, res) => {
     });
 
     await publication.save();
-    await publication.populate("comments.user", "nick name image");
+    await publication.populate("comments.user", "nick name imageKey");
 
-    const normalized = sanitizePublication(publication, userId, { includeComments: true });
+    const normalized = await formatPublicationResponse(publication, userId, { includeComments: true });
 
     const ownerId = publication.user?._id?.toString?.() ?? publication.user?.toString?.();
     const preview = text.length > 80 ? `${text.slice(0, 77)}…` : text;
@@ -473,13 +572,15 @@ const listSavedPublications = async (req, res) => {
     const posts = await Publication.find({
       savedBy: req.user.id
     })
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .sort({ createdAt: -1 })
       .exec();
 
+    const items = await formatPublicationCollection(posts, req.user.id);
+
     return res.status(200).json({
       status: "success",
-      items: posts.map((pub) => sanitizePublication(pub, req.user.id))
+      items
     });
   }catch(error){
     return res.status(500).json({
@@ -495,7 +596,7 @@ const savePublication = async (req, res) => {
   const userId = req.user.id;
   try{
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .exec();
 
     if(!publication){
@@ -517,7 +618,7 @@ const savePublication = async (req, res) => {
       await publication.save();
     }
 
-    const normalized = sanitizePublication(publication, userId);
+    const normalized = await formatPublicationResponse(publication, userId);
     return res.status(200).json({
       status: "success",
       publication: normalized
@@ -536,7 +637,7 @@ const unsavePublication = async (req, res) => {
   const userId = req.user.id;
   try{
     const publication = await Publication.findById(id)
-      .populate("user", "nick name image")
+      .populate("user", "nick name imageKey")
       .exec();
 
     if(!publication){
@@ -558,7 +659,7 @@ const unsavePublication = async (req, res) => {
       await publication.save();
     }
 
-    const normalized = sanitizePublication(publication, userId);
+    const normalized = await formatPublicationResponse(publication, userId);
     return res.status(200).json({
       status: "success",
       publication: normalized
@@ -586,21 +687,8 @@ const deletePublication = async (req, res) => {
       return res.status(403).json({ status: "error", message: "No tienes permiso para eliminar esta publicación" });
     }
 
-    // Eliminar archivo asociado si existe
-    try {
-      const fs = require("fs");
-      const path = require("path");
-      const PUBLIC_ROOT = path.join(__dirname, "..", "public");
-      const imagePath = publication.image ? publication.image.replace(/^\//, "") : null;
-      if (imagePath) {
-        const absolute = path.join(PUBLIC_ROOT, imagePath);
-        if (fs.existsSync(absolute)) {
-          fs.unlinkSync(absolute);
-        }
-      }
-    } catch (err) {
-      // No bloquear la eliminación en BD si falla borrar el archivo
-      console.warn("No se pudo eliminar el archivo de la publicación:", err.message);
+    if (publication.imageKey) {
+      await deleteFileFromS3(publication.imageKey);
     }
 
     await Publication.deleteOne({ _id: id }).exec();

@@ -39,6 +39,30 @@ let heroIndex = 0;
 let heroTimer;
 let videoSwapTimer;
 
+const GOOGLE_BUTTON_OPTIONS = {
+  type: "standard",
+  theme: "outline",
+  size: "large",
+  text: "continue_with",
+  shape: "pill",
+  logo_alignment: "left",
+  width: "100%"
+};
+
+const apiBase = "";
+const endpoints = {
+  login: "/api/auth/login",
+  register: "/api/auth/register",
+  google: "/api/auth/google",
+  config: "/api/auth/config"
+};
+
+let authConfig = null;
+let googleInitialized = false;
+let recaptchaSiteKey = null;
+let recaptchaWidgetId = null;
+let recaptchaReady = false;
+
 function setMsg(text, type = "info") {
   if (!text) {
     $msg.className = "msg";
@@ -87,16 +111,165 @@ document.addEventListener("click", (e) => {
 });
 
 // ---------- Helpers API ----------
-const apiBase = ""; // mismo origen
-const endpoints = { login: "/api/user/login", register: "/api/user/register" };
+async function postJSON(url, data, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+      credentials: options.credentials || "include"
+    });
+    const json = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data: json };
+  } catch (error) {
+    console.error("Error de red al llamar POST", url, error);
+    return {
+      ok: false,
+      status: 0,
+      data: { message: "No fue posible conectar con el servidor. Intenta nuevamente." }
+    };
+  }
+}
 
-async function postJSON(url, data) {
-  const res = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+async function fetchJSON(url, options = {}) {
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      credentials: options.credentials || "include",
+      headers: options.headers || {}
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch (error) {
+    console.error("Error de red al llamar GET", url, error);
+    throw error;
+  }
+}
+
+async function waitForGoogle() {
+  if (window.google?.accounts?.id) return window.google.accounts.id;
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const timer = setInterval(() => {
+      if (window.google?.accounts?.id) {
+        clearInterval(timer);
+        resolve(window.google.accounts.id);
+      } else if (attempts > 40) {
+        clearInterval(timer);
+        reject(new Error("Google script not loaded"));
+      }
+      attempts += 1;
+    }, 100);
   });
-  const json = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data: json };
+}
+
+async function waitForRecaptcha() {
+  if (window.grecaptcha?.render) return window.grecaptcha;
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const timer = setInterval(() => {
+      const grecaptcha = window.grecaptcha;
+      if (grecaptcha?.render) {
+        clearInterval(timer);
+        resolve(grecaptcha);
+      } else if (attempts > 60) {
+        clearInterval(timer);
+        reject(new Error("reCAPTCHA no disponible"));
+      }
+      attempts += 1;
+    }, 120);
+  });
+}
+
+async function ensureAuthConfig() {
+  if (authConfig) return authConfig;
+  try {
+    authConfig = await fetchJSON(apiBase + endpoints.config);
+  } catch (error) {
+    console.warn("No se pudo obtener la configuración de autenticación:", error);
+    authConfig = {};
+  }
+  return authConfig;
+}
+
+async function initializeGoogleSignIn(clientId) {
+  if (googleInitialized || !clientId) return;
+  try {
+    const accounts = await waitForGoogle();
+    accounts.initialize({
+      client_id: clientId,
+      callback: handleGoogleCredential,
+      ux_mode: "popup",
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+    renderGoogleButton("google-login-btn");
+    renderGoogleButton("google-register-btn");
+    googleInitialized = true;
+  } catch (error) {
+    console.warn("No se pudo inicializar Google Sign-In:", error);
+  }
+}
+
+function renderGoogleButton(targetId) {
+  const container = document.getElementById(targetId);
+  if (!container || container.dataset.googleRendered === "true") return;
+  try {
+    window.google.accounts.id.renderButton(container, GOOGLE_BUTTON_OPTIONS);
+    container.dataset.googleRendered = "true";
+  } catch (error) {
+    console.warn("No se pudo renderizar el botón de Google:", error);
+  }
+}
+
+async function handleGoogleCredential(response) {
+  const credential = response?.credential;
+  if (!credential) {
+    setMsg("No pudimos validar tu cuenta de Google. Intenta de nuevo.", "error");
+    return;
+  }
+  setMsg("Conectando con Google...");
+  const { ok, status, data } = await postJSON(apiBase + endpoints.google, { idToken: credential });
+  if (!ok) {
+    const message =
+      data?.message || (status === 401 ? "No pudimos validar tu cuenta de Google. Intenta de nuevo." : `Error ${status} al conectar con Google`);
+    setMsg(message, "error");
+    return;
+  }
+  if (data?.user) localStorage.setItem("user", JSON.stringify(data.user));
+  if (data?.token) localStorage.setItem("token", data.token);
+  setMsg(`Bienvenido, ${data?.user?.name || data?.user?.nick || "usuario"} 👋`, "success");
+  setTimeout(() => {
+    window.location.href = "/feed.html";
+  }, 750);
+}
+
+async function renderRecaptchaWidget() {
+  if (!recaptchaSiteKey || recaptchaWidgetId !== null) return;
+  try {
+    const grecaptcha = await waitForRecaptcha();
+    const container = document.getElementById("register-recaptcha");
+    if (!container) return;
+    recaptchaWidgetId = grecaptcha.render(container, {
+      sitekey: recaptchaSiteKey,
+      theme: document.body.classList.contains("theme-day") ? "light" : "dark"
+    });
+    recaptchaReady = true;
+  } catch (error) {
+    console.warn("No se pudo renderizar reCAPTCHA:", error);
+  }
+}
+
+async function loadAuthIntegrations() {
+  const config = await ensureAuthConfig();
+  if (config.googleClientId) {
+    await initializeGoogleSignIn(config.googleClientId);
+  }
+  if (config.recaptchaSiteKey) {
+    recaptchaSiteKey = config.recaptchaSiteKey;
+    await renderRecaptchaWidget();
+  }
 }
 
 // ---------- Submit Login ----------
@@ -121,14 +294,35 @@ forms.login.addEventListener("submit", async (e) => {
 // ---------- Submit Registro ----------
 forms.register.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!recaptchaSiteKey) {
+    setMsg("No pudimos verificar que eres humano. Reintenta el captcha.", "error");
+    return;
+  }
+  if (recaptchaWidgetId === null || typeof window.grecaptcha === "undefined") {
+    await renderRecaptchaWidget();
+  }
+  if (recaptchaWidgetId === null || typeof window.grecaptcha === "undefined") {
+    setMsg("No pudimos verificar que eres humano. Reintenta el captcha.", "error");
+    return;
+  }
+  const recaptchaToken = window.grecaptcha.getResponse(recaptchaWidgetId);
+  if (!recaptchaToken) {
+    setMsg("No pudimos verificar que eres humano. Reintenta el captcha.", "error");
+    return;
+  }
+
   setMsg("Registrando usuario...");
   const payload = {
     name: document.getElementById("reg-name").value.trim(),
     nick: document.getElementById("reg-nick").value.trim(),
     email: document.getElementById("reg-email").value.trim().toLowerCase(),
     password: document.getElementById("reg-password").value,
+    recaptchaToken
   };
   const { ok, status, data } = await postJSON(apiBase + endpoints.register, payload);
+  if (window.grecaptcha && recaptchaWidgetId !== null) {
+    window.grecaptcha.reset(recaptchaWidgetId);
+  }
   if (!ok) return setMsg(data?.message || `Error ${status} al registrar`, "error");
 
   setMsg("Usuario registrado correctamente. Ahora inicia sesión.", "success");
@@ -146,6 +340,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   initHeroCarousel();
+  loadAuthIntegrations().catch((error) =>
+    console.warn("No se pudieron cargar las integraciones de autenticación:", error)
+  );
 });
 
 // ---------- Toggle Día/Noche + fundido de video ----------

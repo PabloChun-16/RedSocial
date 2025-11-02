@@ -1,28 +1,5 @@
-const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
-
-const AVATAR_FOLDER = path.join(__dirname, "..", "public", "uploads", "avatars");
-const POST_FOLDER = path.join(__dirname, "..", "public", "uploads", "posts");
-const STORY_FOLDER = path.join(__dirname, "..", "public", "uploads", "stories");
-
-fs.mkdirSync(AVATAR_FOLDER, { recursive: true });
-fs.mkdirSync(POST_FOLDER, { recursive: true });
-fs.mkdirSync(STORY_FOLDER, { recursive: true });
-
-const createStorage = (folder) =>
-  multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, folder);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || ".png";
-      const safeExt = ext.toLowerCase();
-      const uniqueId = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      const userId = req.user?.id || "anonymous";
-      cb(null, `${userId}-${uniqueId}${safeExt}`);
-    }
-  });
+const memoryStorage = multer.memoryStorage();
 
 const allowedMime = new Set([
   "image/jpeg",
@@ -41,28 +18,28 @@ const makeFileFilter = (fieldName) => (req, file, cb) => {
   }
 };
 
-const avatarUpload = multer({
-  storage: createStorage(AVATAR_FOLDER),
-  fileFilter: makeFileFilter("avatar"),
-  limits: {
-    fileSize: 3 * 1024 * 1024 // 3MB
-  }
+const createUpload = ({ fieldName, fileSizeLimit }) =>
+  multer({
+    storage: memoryStorage,
+    fileFilter: makeFileFilter(fieldName),
+    limits: {
+      fileSize: fileSizeLimit
+    }
+  });
+
+const avatarUpload = createUpload({
+  fieldName: "avatar",
+  fileSizeLimit: 3 * 1024 * 1024 // 3MB
 });
 
-const postUpload = multer({
-  storage: createStorage(POST_FOLDER),
-  fileFilter: makeFileFilter("media"),
-  limits: {
-    fileSize: 12 * 1024 * 1024 // 12MB
-  }
+const postUpload = createUpload({
+  fieldName: "media",
+  fileSizeLimit: 12 * 1024 * 1024 // 12MB
 });
 
-const storyUpload = multer({
-  storage: createStorage(STORY_FOLDER),
-  fileFilter: makeFileFilter("media"),
-  limits: {
-    fileSize: 12 * 1024 * 1024 // 12MB
-  }
+const storyUpload = createUpload({
+  fieldName: "media",
+  fileSizeLimit: 12 * 1024 * 1024 // 12MB
 });
 
 module.exports = {

@@ -3,6 +3,9 @@ const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const User = require("../models/user");
 const { getUnreadMessagesCount, toIdString, readUnreadCount } = require("../services/messages");
+const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
+
+const DEFAULT_AVATAR = "iconobase.png";
 
 const MAX_THREADS = 200;
 const MAX_NOTIFICATIONS = 50;
@@ -24,12 +27,21 @@ const sanitizeUserSummary = (source) => {
   if(!id){
     return null;
   }
+  const imageKey =
+    typeof data?.imageKey === "string" && data.imageKey.trim() ? data.imageKey.trim() : null;
+  const legacyImage =
+    typeof data?.image === "string" && data.image.trim() && data.image.trim() !== DEFAULT_AVATAR
+      ? data.image.trim()
+      : null;
   return {
     id,
     name: data?.name || "",
     surname: data?.surname || "",
     nick: data?.nick || "",
-    image: data?.image || "iconobase.png"
+    imageKey,
+    legacyImage,
+    image: DEFAULT_AVATAR,
+    imageUrl: null
   };
 };
 
@@ -57,6 +69,50 @@ const sanitizeMessage = (doc, currentUserId) => {
   };
 };
 
+const pickLegacyImage = (source) => {
+  if (!source || typeof source !== "object") return null;
+  if (typeof source.legacyImage === "string" && source.legacyImage.trim()) {
+    return source.legacyImage.trim();
+  }
+  if (typeof source.image === "string" && source.image.trim()) {
+    return source.image.trim();
+  }
+  return null;
+};
+
+const decorateUserSummary = async (summary) => {
+  if (!summary) return null;
+  const imageUrl = await resolveImageUrl({
+    key: summary.imageKey,
+    legacy: pickLegacyImage(summary),
+    excludeLegacy: [DEFAULT_AVATAR]
+  });
+  const decorated = {
+    ...summary,
+    imageUrl,
+    image: imageUrl || DEFAULT_AVATAR
+  };
+  stripImageSecrets(decorated);
+  return decorated;
+};
+
+const decorateMessage = async (message) => {
+  if (!message) return null;
+  const decorated = {
+    ...message,
+    sender: await decorateUserSummary(message.sender),
+    recipient: await decorateUserSummary(message.recipient)
+  };
+  stripImageSecrets(decorated);
+  return decorated;
+};
+
+const decorateMessageList = async (messages) => {
+  const list = Array.isArray(messages) ? messages : [];
+  const decorated = await Promise.all(list.map(decorateMessage));
+  return decorated.filter(Boolean);
+};
+
 const truncatePreview = (text = "", limit = NOTIFY_PREVIEW_LIMIT) => {
   const trimmed = text.trim();
   if(!trimmed) return "";
@@ -73,13 +129,14 @@ const collectMessages = async (conversationId, currentUserId, { limit, before } 
   const query = Message.find(filter)
     .sort({ createdAt: -1 })
     .limit(pageSize)
-    .populate("sender", "name nick surname image")
-    .populate("recipient", "name nick surname image");
+    .populate("sender", "name nick surname imageKey")
+    .populate("recipient", "name nick surname imageKey");
 
   const rawMessages = await query.lean().exec();
   const hasMore = rawMessages.length === pageSize;
   rawMessages.reverse();
-  const messages = rawMessages.map((message) => sanitizeMessage(message, currentUserId));
+  const sanitized = rawMessages.map((message) => sanitizeMessage(message, currentUserId));
+  const messages = await decorateMessageList(sanitized);
   const nextCursor = rawMessages.length ? rawMessages[0].createdAt : null;
   return { messages, hasMore, nextCursor };
 };
@@ -127,7 +184,7 @@ const createMessageNotification = async ({
 const fetchUserWithRelations = async (userId) => {
   if(!userId) return null;
   return User.findById(userId)
-    .select("name surname nick image followers following followersCount followingCount")
+    .select("name surname nick imageKey followers following followersCount followingCount")
     .lean()
     .exec();
 };
@@ -216,7 +273,7 @@ const buildThreadList = async (currentUserId) => {
 
   const conversations = await Conversation.find({ participants: currentUserId })
     .limit(MAX_THREADS)
-    .populate("participants", "name nick surname image")
+    .populate("participants", "name nick surname imageKey")
     .lean()
     .exec();
 
@@ -235,7 +292,7 @@ const buildThreadList = async (currentUserId) => {
   });
 
   const contactUsers = await User.find({ _id: { $in: Array.from(contactIds) } })
-    .select("name surname nick image")
+    .select("name surname nick imageKey")
     .lean()
     .exec();
 
@@ -243,7 +300,7 @@ const buildThreadList = async (currentUserId) => {
     contactUsers.map((user) => [toIdString(user?._id ?? user.id), user])
   );
 
-  const threads = Array.from(contactIds)
+  const baseThreads = Array.from(contactIds)
     .map((contactId) => {
       const target = contactsMap.get(contactId);
       if(!target){
@@ -276,8 +333,18 @@ const buildThreadList = async (currentUserId) => {
       return bTime - aTime;
     });
 
-  const totalUnread = threads.reduce((sum, thread) => sum + (thread.unread || 0), 0);
-  return { threads, totalUnread };
+  const threads = await Promise.all(
+    baseThreads.map(async (thread) => {
+      const contact = await decorateUserSummary(thread.contact);
+      const decorated = { ...thread, contact };
+      stripImageSecrets(decorated);
+      return decorated;
+    })
+  );
+
+  const filtered = threads.filter(Boolean);
+  const totalUnread = filtered.reduce((sum, thread) => sum + (thread.unread || 0), 0);
+  return { threads: filtered, totalUnread };
 };
 
 const buildConversationPayload = async ({
@@ -342,24 +409,32 @@ const buildConversationPayload = async ({
   };
   relationship.friends = relationship.following && relationship.followedBy;
 
+  const contactSummary = sanitizeUserSummary(contactUser);
+  const currentSummary = sanitizeUserSummary(currentUser);
+  const decoratedContact = await decorateUserSummary(contactSummary);
+  const decoratedCurrent = await decorateUserSummary(currentSummary);
+
+  const conversationPayload = {
+    id: conversation._id.toString(),
+    contact: decoratedContact,
+    participants: [decoratedCurrent, decoratedContact],
+    unread: 0,
+    messages,
+    hasMore,
+    nextCursor,
+    relationship,
+    lastMessage: conversation.lastMessage
+      ? {
+          text: conversation.lastMessage.text || "",
+          createdAt: conversation.lastMessage.createdAt,
+          sender: toIdString(conversation.lastMessage.sender)
+        }
+      : null
+  };
+  stripImageSecrets(conversationPayload);
+
   return {
-    conversation: {
-      id: conversation._id.toString(),
-      contact: sanitizeUserSummary(contactUser),
-      participants: [sanitizeUserSummary(currentUser), sanitizeUserSummary(contactUser)],
-      unread: 0,
-      messages,
-      hasMore,
-      nextCursor,
-      relationship,
-      lastMessage: conversation.lastMessage
-        ? {
-            text: conversation.lastMessage.text || "",
-            createdAt: conversation.lastMessage.createdAt,
-            sender: toIdString(conversation.lastMessage.sender)
-          }
-        : null
-    },
+    conversation: conversationPayload,
     totalUnread
   };
 };
@@ -465,7 +540,7 @@ const getConversationById = async (req, res) => {
   }
   try{
     const conversation = await Conversation.findById(conversationId)
-      .populate("participants", "name surname nick image followers following")
+      .populate("participants", "name surname nick imageKey followers following")
       .exec();
     if(!conversation){
       return res.status(404).json({
@@ -627,22 +702,29 @@ const sendMessageToUser = async (req, res) => {
       },
       toIdString(req.user.id)
     );
+    const decoratedMessage = await decorateMessage(sanitizedMessage);
 
     const totalUnread = await getUnreadMessagesCount(req.user.id);
 
+    const contactSummary = sanitizeUserSummary(targetUser);
+    const decoratedContact = await decorateUserSummary(contactSummary);
+
+    const conversationPayload = {
+      id: conversation._id.toString(),
+      contact: decoratedContact,
+      created: created === true,
+      lastMessage: {
+        text,
+        createdAt: now,
+        sender: toIdString(req.user.id)
+      }
+    };
+    stripImageSecrets(conversationPayload);
+
     return res.status(201).json({
       status: "success",
-      message: sanitizedMessage,
-      conversation: {
-        id: conversation._id.toString(),
-        contact: sanitizeUserSummary(targetUser),
-        created: created === true,
-        lastMessage: {
-          text,
-          createdAt: now,
-          sender: toIdString(req.user.id)
-        }
-      },
+      message: decoratedMessage,
+      conversation: conversationPayload,
       totalUnread
     });
   }catch(error){
