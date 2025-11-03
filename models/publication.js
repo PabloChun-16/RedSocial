@@ -26,6 +26,7 @@ const publicationSchema = new Schema(
     imageKey: { type: String, required: true },
     caption: { type: String, trim: true },
     tags: [{ type: String, trim: true }],
+    autoTags: { type: [String], default: () => [] },
     filter: { type: String, trim: true },
     adjustments: { type: adjustmentsSchema, default: () => ({}) },
     likes: { type: Number, default: 0 },

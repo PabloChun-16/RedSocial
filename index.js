@@ -1,28 +1,27 @@
 // Cargar variables de entorno
 require("dotenv").config();
 
+// Validación rápida de variables requeridas
+const REQUIRED_ENVS = ["MONGODB_URI"];
+for (const k of REQUIRED_ENVS) {
+  if (!process.env[k]) {
+    console.error(`❌ Falta la variable ${k} en .env`);
+    process.exit(1);
+  }
+}
+
 // Importar dependencias
 const connection = require("./database/connection");
 const express = require("express");
 const cors = require("cors");
+const { debugAws } = require("./controllers/debugController");
 
 // Mensaje de bienvenida
 console.log("Bienvenido a mi red social");
 
-// Conectar a la BD
-connection().then(async () => {
-  // Alinear índices de conversaciones para evitar colisiones por índices heredados
-  try{
-    const { ensureConversationIndexes } = require("./database/ensureIndexes");
-    await ensureConversationIndexes();
-  }catch(err){
-    console.warn("No se pudieron sincronizar los índices:", err?.message);
-  }
-});
-
 // Crear el servidor node
 const app = express();
-const puerto = 3900;
+const PORT = Number(process.env.PORT || 3900);
 
 // Configurar CORS (middleware)
 const parseOrigins = (value = "") =>
@@ -47,15 +46,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 
-// Convertir los datos del body a objetos JS
+// Body parsers y estáticos
 app.use(express.json());
-// Servir archivos estáticos del frontend
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.use(express.urlencoded({ extended: true }));
-
-// Configuración de las rutas
+// Rutas
 const authRoutes = require("./routes/auth");
+const aiRoutes = require("./routes/ai");
 const userRoutes = require("./routes/user");
 const publicationRoutes = require("./routes/publication");
 const followRoutes = require("./routes/follow");
@@ -63,7 +61,9 @@ const storyRoutes = require("./routes/story");
 const messageRoutes = require("./routes/message");
 
 // Prefijos para las rutas
+app.get("/api/debug-aws", debugAws);
 app.use("/api/auth", authRoutes);
+app.use("/api/ai", aiRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/publication", publicationRoutes);
 app.use("/api/follow", followRoutes);
@@ -72,12 +72,38 @@ app.use("/api/messages", messageRoutes);
 
 // Ruta de prueba
 app.get("/ruta-prueba", (req, res) => {
-  return res.status(200).json({
-    mensaje: "Hola mundo desde mi red social"
-  });
+  return res.status(200).json({ mensaje: "Hola mundo desde mi red social" });
 });
 
-// Poner el servidor a escuchar peticiones
-app.listen(puerto, () => {
-  console.log("Servidor corriendo en el puerto", puerto);
+// Probes útiles
+app.get("/health", (_req, res) => res.status(200).send("OK"));
+
+// Bootstrap: conectar BD y luego levantar servidor
+(async () => {
+  try {
+    await connection(); // usa process.env.MONGODB_URI internamente
+    try {
+      const { ensureConversationIndexes } = require("./database/ensureIndexes");
+      await ensureConversationIndexes();
+    } catch (err) {
+      console.warn("No se pudieron sincronizar los índices:", err?.message);
+    }
+
+    app.listen(PORT, () => {
+      console.log(`Servidor corriendo en el puerto ${PORT}`);
+    });
+  } catch (err) {
+    console.error("No se pudo inicializar la aplicación:", err?.message);
+    process.exit(1);
+  }
+})();
+
+// Manejo básico de errores globales
+process.on("unhandledRejection", (reason) => {
+  console.error("💥 UnhandledRejection:", reason);
 });
+process.on("uncaughtException", (err) => {
+  console.error("💥 UncaughtException:", err);
+  process.exit(1);
+});
+// Fin de index.js

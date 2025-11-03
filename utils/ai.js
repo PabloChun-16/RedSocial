@@ -1,0 +1,402 @@
+const { RekognitionClient, DetectLabelsCommand } = require("@aws-sdk/client-rekognition");
+const { TranslateClient, TranslateTextCommand } = require("@aws-sdk/client-translate");
+
+console.log("[AI INIT] Cargando utils/ai.js");
+
+const baseCredentials = {
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+};
+
+const rekognition = new RekognitionClient({
+  region: "us-east-1",
+  credentials: baseCredentials
+});
+console.log(
+  "[AI INIT] RekognitionClient creado en us-east-1 con la key que empieza en:",
+  process.env.AWS_ACCESS_KEY_ID ? `${process.env.AWS_ACCESS_KEY_ID.slice(0, 6)}...` : "N/A"
+);
+
+const translate = new TranslateClient({
+  region: "us-east-1",
+  credentials: baseCredentials
+});
+console.log("[AI INIT] TranslateClient creado en us-east-1");
+
+const LOCAL_DICT = {
+  Person: "persona",
+  People: "personas",
+  Human: "persona",
+  Man: "hombre",
+  Men: "hombres",
+  Woman: "mujer",
+  Women: "mujeres",
+  Boy: "niño",
+  Girl: "niña",
+  Kid: "niño",
+  Child: "niño",
+  Baby: "bebé",
+  Teen: "adolescente",
+  Teenager: "adolescente",
+  Adult: "adulto",
+  Elderly: "anciano",
+  Male: "masculino",
+  Female: "femenino",
+  Face: "rostro",
+  Selfie: "selfie",
+  Clothing: "ropa",
+  Apparel: "ropa",
+  "T-Shirt": "camiseta",
+  Shirt: "camisa",
+  Jersey: "camiseta deportiva",
+  Jacket: "chaqueta",
+  Coat: "abrigo",
+  Pants: "pantalones",
+  Jeans: "jeans",
+  Shorts: "shorts",
+  Skirt: "falda",
+  Dress: "vestido",
+  Shoes: "zapatos",
+  Boot: "bota",
+  Sneaker: "tenis",
+  Hat: "sombrero",
+  Cap: "gorra",
+  Glasses: "gafas",
+  Sunglasses: "lentes de sol",
+  Backpack: "mochila",
+  Bag: "bolsa",
+  Handbag: "bolsa de mano",
+  Purse: "cartera",
+  Watch: "reloj",
+  Bracelet: "pulsera",
+  Ring: "anillo",
+  Necklace: "collar",
+  Earrings: "aretes",
+  Mask: "mascarilla",
+  Sport: "deporte",
+  Sports: "deportes",
+  Exercise: "ejercicio",
+  Workout: "entrenamiento",
+  Dancing: "bailando",
+  Dance: "baile",
+  Singing: "cantando",
+  Skiing: "esquí",
+  Snowboarding: "snowboard",
+  Surfing: "surf",
+  Skateboard: "patineta",
+  Skateboarding: "patineta",
+  Riding: "montando",
+  Driving: "conduciendo",
+  Running: "corriendo",
+  Walking: "caminando",
+  Swimming: "nadando",
+  Cooking: "cocinando",
+  Eating: "comiendo",
+  Drinking: "bebiendo",
+  Backpacking: "mochilero",
+  Hiking: "caminata",
+  Camping: "campamento",
+  Party: "fiesta",
+  Celebration: "celebración",
+  Concert: "concierto",
+  Phone: "teléfono",
+  "Mobile Phone": "teléfono",
+  "Cell Phone": "teléfono",
+  Smartphone: "teléfono",
+  Electronics: "electrónicos",
+  Headphones: "audífonos",
+  Earphones: "audífonos",
+  Laptop: "laptop",
+  Computer: "computadora",
+  Keyboard: "teclado",
+  Mouse: "mouse",
+  Tablet: "tableta",
+  Camera: "cámara",
+  TV: "televisión",
+  Screen: "pantalla",
+  Monitor: "monitor",
+  Remote: "control remoto",
+  Drone: "dron",
+  Microphone: "micrófono",
+  Speaker: "bocina",
+  "Game Controller": "control de videojuegos",
+  Console: "consola",
+  Toy: "juguete",
+  "Stuffed Toy": "peluche",
+  Car: "carro",
+  Automobile: "automóvil",
+  Vehicle: "vehículo",
+  Truck: "camión",
+  "Pickup Truck": "camioneta",
+  Van: "van",
+  Bus: "bus",
+  Taxi: "taxi",
+  Ambulance: "ambulancia",
+  "Fire Truck": "camión de bomberos",
+  "Police Car": "patrulla",
+  Motorcycle: "moto",
+  Bicycle: "bicicleta",
+  Bike: "bicicleta",
+  Helmet: "casco",
+  Boat: "bote",
+  Ship: "barco",
+  Airplane: "avión",
+  Jet: "avión",
+  Train: "tren",
+  Indoors: "interior",
+  Inside: "interior",
+  Outdoors: "exterior",
+  Outside: "exterior",
+  Room: "cuarto",
+  Bedroom: "dormitorio",
+  "Living Room": "sala",
+  Kitchen: "cocina",
+  Bathroom: "baño",
+  Office: "oficina",
+  Restaurant: "restaurante",
+  "Café": "café",
+  Store: "tienda",
+  Shop: "tienda",
+  Supermarket: "supermercado",
+  Street: "calle",
+  Road: "carretera",
+  Highway: "autopista",
+  "Parking Lot": "estacionamiento",
+  School: "escuela",
+  Classroom: "salón de clases",
+  Stadium: "estadio",
+  Gym: "gimnasio",
+  Beach: "playa",
+  Coast: "costa",
+  Sea: "mar",
+  Ocean: "océano",
+  Pool: "piscina",
+  Forest: "bosque",
+  Jungle: "selva",
+  Mountain: "montaña",
+  Hill: "colina",
+  Valley: "valle",
+  Desert: "desierto",
+  City: "ciudad",
+  Urban: "urbano",
+  Skyline: "horizonte urbano",
+  Sky: "cielo",
+  Sunset: "atardecer",
+  Sunrise: "amanecer",
+  Night: "noche",
+  Nightlife: "vida nocturna",
+  Fireworks: "fuegos artificiales",
+  Nature: "naturaleza",
+  Landscape: "paisaje",
+  Scenery: "paisaje",
+  Water: "agua",
+  River: "río",
+  Lake: "lago",
+  Waterfall: "cascada",
+  Snow: "nieve",
+  Ice: "hielo",
+  Rain: "lluvia",
+  Cloud: "nube",
+  Clouds: "nubes",
+  Storm: "tormenta",
+  Fog: "niebla",
+  Tree: "árbol",
+  Trees: "árboles",
+  Branch: "rama",
+  Leaf: "hoja",
+  Leaves: "hojas",
+  Grass: "pasto",
+  Field: "campo",
+  Flower: "flor",
+  Flowers: "flores",
+  Plant: "planta",
+  Bush: "arbusto",
+  Garden: "jardín",
+  Fire: "fuego",
+  Smoke: "humo",
+  Sand: "arena",
+  Rock: "roca",
+  Rocks: "rocas",
+  Stone: "piedra",
+  Stones: "piedras",
+  Dirt: "tierra",
+  Ground: "suelo",
+  Wood: "madera",
+  Dog: "perro",
+  Puppy: "cachorro",
+  Cat: "gato",
+  Kitten: "gatito",
+  Pet: "mascota",
+  Animal: "animal",
+  Mammal: "mamífero",
+  Bird: "ave",
+  Birds: "aves",
+  Seagull: "gaviota",
+  Duck: "pato",
+  Chicken: "pollo",
+  Horse: "caballo",
+  Cow: "vaca",
+  Sheep: "oveja",
+  Goat: "cabra",
+  Pig: "cerdo",
+  Fish: "pez",
+  Shark: "tiburón",
+  Dolphin: "delfín",
+  Whale: "ballena",
+  Reptile: "reptil",
+  Lizard: "lagartija",
+  Snake: "serpiente",
+  Insect: "insecto",
+  Butterfly: "mariposa",
+  Bee: "abeja",
+  Spider: "araña",
+  Food: "comida",
+  Meal: "comida",
+  Lunch: "almuerzo",
+  Dinner: "cena",
+  Breakfast: "desayuno",
+  Drink: "bebida",
+  Beverage: "bebida",
+  Bottle: "botella",
+  Glass: "vaso",
+  Cup: "taza",
+  Plate: "plato",
+  Fork: "tenedor",
+  Spoon: "cuchara",
+  Knife: "cuchillo",
+  Pizza: "pizza",
+  Burger: "hamburguesa",
+  Sandwich: "sándwich",
+  Taco: "taco",
+  Sushi: "sushi",
+  Pasta: "pasta",
+  Salad: "ensalada",
+  Dessert: "postre",
+  Cake: "pastel",
+  "Ice Cream": "helado",
+  Coffee: "café",
+  Tea: "té",
+  Beer: "cerveza",
+  Wine: "vino",
+  Building: "edificio",
+  House: "casa",
+  Home: "hogar",
+  Cabin: "cabaña",
+  Hut: "choza",
+  Bridge: "puente",
+  Tower: "torre",
+  Skyscraper: "rascacielos",
+  Fence: "cerca",
+  Wall: "pared",
+  Door: "puerta",
+  Window: "ventana",
+  Stairs: "escaleras",
+  Bench: "banca",
+  Table: "mesa",
+  Desk: "escritorio",
+  Chair: "silla",
+  Couch: "sofá",
+  Sofa: "sofá",
+  Bed: "cama",
+  Pillow: "almohada",
+  Blanket: "cobija",
+  Lamp: "lámpara",
+  Light: "luz",
+  Ceiling: "techo",
+  Floor: "piso",
+  Happy: "feliz",
+  Smile: "sonrisa",
+  Fun: "diversión",
+  Friends: "amigos",
+  Friendship: "amistad",
+  Love: "amor",
+  Romance: "romance",
+  Couple: "pareja",
+  Together: "juntos",
+  Family: "familia",
+  Vacation: "vacaciones",
+  Holiday: "feriado",
+  Travel: "viaje",
+  Adventure: "aventura",
+  Tourism: "turismo",
+  Relaxation: "relajación",
+  Chill: "relax",
+  Festival: "festival",
+  Music: "música",
+  Performance: "presentación",
+  Art: "arte",
+  Graffiti: "grafiti",
+  Tattoo: "tatuaje",
+  Makeup: "maquillaje",
+  Fashion: "moda",
+  Style: "estilo",
+  Outfit: "outfit",
+  Pose: "pose",
+  Portrait: "retrato",
+  Background: "fondo",
+  Dark: "oscuro",
+  Bright: "brillante",
+  Colorful: "colorido",
+  Aesthetic: "estético"
+};
+
+const localTranslateLabels = (englishLabels) => {
+  return (Array.isArray(englishLabels) ? englishLabels : [])
+    .map((label) => {
+      const direct = LOCAL_DICT[label];
+      if (direct) return direct;
+      if (typeof label === "string") {
+        const trimmed = label.trim();
+        if (LOCAL_DICT[trimmed]) return LOCAL_DICT[trimmed];
+        return trimmed.toLowerCase();
+      }
+      return "";
+    })
+    .filter((entry) => entry && entry.length > 0);
+};
+
+const detectLabelsFromBytes = async (buffer) => {
+  console.log("[AI] detectLabelsFromBytes() llamado. buffer length:", buffer ? buffer.length : "no-buffer");
+  if (!buffer) return [];
+  const command = new DetectLabelsCommand({
+    Image: { Bytes: buffer },
+    MaxLabels: 10,
+    MinConfidence: 70.0
+  });
+  const response = await rekognition.send(command);
+  const labels = Array.isArray(response?.Labels) ? response.Labels : [];
+  const names = labels.map((item) => (typeof item?.Name === "string" ? item.Name.trim() : null)).filter(Boolean);
+  console.log("[AI] detectLabelsFromBytes() respuesta recibida con Labels:", names);
+  return names;
+};
+
+const translateLabelsToSpanish = async (englishLabels) => {
+  console.log("[AI] translateLabelsToSpanish() llamado con:", englishLabels);
+  const text = Array.isArray(englishLabels) ? englishLabels.join(", ") : "";
+  if (!text.trim()) {
+    console.log("[AI] translateLabelsToSpanish() no hay texto para traducir");
+    return [];
+  }
+
+  const command = new TranslateTextCommand({
+    SourceLanguageCode: "en",
+    TargetLanguageCode: "es",
+    Text: text
+  });
+  const response = await translate.send(command);
+  const translatedText = response?.TranslatedText || "";
+  console.log("[AI] translateLabelsToSpanish() respuesta cruda:", translatedText);
+
+  const spanishLabels = translatedText
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length > 0);
+  console.log("[AI] translateLabelsToSpanish() etiquetas finales:", spanishLabels);
+  return spanishLabels;
+};
+
+module.exports = {
+  detectLabelsFromBytes,
+  translateLabelsToSpanish,
+  localTranslateLabels
+};

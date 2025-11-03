@@ -27,6 +27,7 @@ const postMediaMiddleware = (req, res, next) => {
 
 router.get("/prueba-publication", publicationController.pruebaPublication);
 router.post("/", auth, postMediaMiddleware, publicationController.createPublication);
+router.get("/search", auth, publicationController.searchPublications);
 router.get("/feed", auth, publicationController.listFeed);
 router.get("/user/:userId", auth, publicationController.listByUser);
 router.get("/saved", auth, publicationController.listSavedPublications);

@@ -2,10 +2,10 @@ const Publication = require("../models/publication");
 const User = require("../models/user");
 const { uploadBufferToS3, deleteFileFromS3 } = require("../utils/s3");
 const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
+const { detectLabelsFromBytes, localTranslateLabels } = require("../utils/ai");
 
 const MAX_NOTIFICATIONS = 50;
 const DEFAULT_AVATAR = "iconobase.png";
-
 const DEFAULT_ADJUSTMENTS = {
   brightness: 1,
   contrast: 1,
@@ -116,6 +116,7 @@ const sanitizePublication = (doc, currentUserId, options = {}) => {
     imageKey,
     caption: data.caption || "",
     tags: Array.isArray(data.tags) ? data.tags : [],
+    autoTags: Array.isArray(data.autoTags) ? data.autoTags : [],
     filter:
       typeof data.filter === "string" && data.filter.trim()
         ? data.filter.trim().toLowerCase()
@@ -258,6 +259,17 @@ const parseAdjustments = (raw) => {
   return { ...DEFAULT_ADJUSTMENTS };
 };
 
+const escapeRegExp = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildSearchQuery = (term) => {
+  const trimmed = typeof term === "string" ? term.trim() : "";
+  if (!trimmed) return null;
+  const regex = new RegExp(escapeRegExp(trimmed), "i");
+  return {
+    $or: [{ caption: regex }, { tags: regex }, { autoTags: regex }]
+  };
+};
+
 const pruebaPublication = (req, res) => {
   return res.status(200).send({
     message: "Mensaje de prueba desde el controlador de Publication"
@@ -265,7 +277,9 @@ const pruebaPublication = (req, res) => {
 };
 
 const createPublication = async (req, res) => {
+  console.log("[POST] createPublication() llamado por user:", req.user ? req.user.id : "anon");
   if (!req.file) {
+    console.log("[POST] No se recibió archivo en req.file");
     return res.status(400).json({
       status: "error",
       message: "Debes subir una imagen para crear la publicación"
@@ -281,11 +295,63 @@ const createPublication = async (req, res) => {
     const visibility = req.body.visibility === "friends" ? "friends" : "public";
     const adjustments = parseAdjustments(req.body.adjustments);
 
+    console.log("[POST] body.caption:", caption);
+    console.log("[POST] body.tags:", tags);
+    console.log("[POST] body.filter:", filter);
+    console.log("[POST] body.visibility:", visibility);
+
+    let autoTags = [];
+    let autoTagsSource = "none";
+
+    if (typeof req.body.autoTags === "string" && req.body.autoTags.trim()) {
+      try {
+        const parsed = JSON.parse(req.body.autoTags);
+        if (Array.isArray(parsed)) {
+          autoTags = parsed
+            .map((tag) => (typeof tag === "string" ? tag.trim().toLowerCase() : ""))
+            .filter(Boolean);
+          autoTags = Array.from(new Set(autoTags));
+          if (autoTags.length) {
+            autoTagsSource = "client";
+            console.log("[POST] autoTags recibidas del cliente:", autoTags);
+          }
+        }
+      } catch (parseError) {
+        console.warn("[POST] No se pudieron parsear autoTags del cliente:", parseError);
+      }
+    }
+
+    if (!autoTags.length && req.file?.buffer) {
+      console.log("[POST] Imagen recibida en req.file. mimetype:", req.file.mimetype, "size:", req.file.buffer.length);
+      try {
+        console.log("[POST] --> Generando autoTags con detectLabelsFromBytes()");
+        const englishLabels = await detectLabelsFromBytes(req.file.buffer);
+        console.log("[POST] englishLabels:", englishLabels);
+        const spanishLabels = localTranslateLabels(englishLabels);
+        console.log("[POST] spanishLabels(local):", spanishLabels);
+        const deduped = new Set(spanishLabels);
+        if (!deduped.size && Array.isArray(englishLabels) && englishLabels.length) {
+          englishLabels
+            .map((label) => (typeof label === "string" ? label.trim().toLowerCase() : ""))
+            .filter(Boolean)
+            .forEach((label) => deduped.add(label));
+        }
+        autoTags = Array.from(deduped);
+        autoTagsSource = "ai";
+      } catch (iaError) {
+        console.error("[POST] ERROR IA detect/translate:", iaError);
+      }
+    } else if (!req.file?.buffer) {
+      console.log("[POST] No se recibió buffer de imagen");
+    }
+
+    console.log("[POST] --> Subiendo imagen a S3");
     imageKey = await uploadBufferToS3({
       buffer: req.file.buffer,
       mimeType: req.file.mimetype,
       folder: "uploads/posts"
     });
+    console.log("[POST] S3 upload OK. imageKey:", imageKey);
 
     const publication = await Publication.create({
       user: req.user.id,
@@ -294,8 +360,10 @@ const createPublication = async (req, res) => {
       tags,
       filter,
       adjustments,
-      visibility
+      visibility,
+      autoTags
     });
+    console.log("[POST] Publicación creada en BD con id:", publication._id, "autoTags origin:", autoTagsSource, "autoTags:", autoTags);
 
     const populated = await publication.populate({
       path: "user",
@@ -303,12 +371,14 @@ const createPublication = async (req, res) => {
     });
     const formatted = await formatPublicationResponse(populated, req.user.id);
 
+    console.log("[POST] Post formateado enviado al cliente. autoTags:", formatted?.autoTags);
     return res.status(201).json({
       status: "success",
       message: "Publicación creada correctamente",
       publication: formatted
     });
   } catch (error) {
+    console.error("[POST] ERROR GENERAL createPublication:", error);
     if (imageKey) {
       await deleteFileFromS3(imageKey);
     }
@@ -699,6 +769,42 @@ const deletePublication = async (req, res) => {
   }
 };
 
+const searchPublications = async (req, res) => {
+  const rawQuery = req.query.q ?? "";
+  const query = buildSearchQuery(rawQuery);
+  if (!query) {
+    return res.status(200).json({
+      status: "success",
+      items: []
+    });
+  }
+
+  try {
+    const limit = Number.parseInt(req.query.limit, 10) || 40;
+    const posts = await Publication.find({
+      ...query,
+      visibility: "public"
+    })
+      .populate("user", "nick name imageKey")
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+
+    const items = await formatPublicationCollection(posts, req.user.id);
+
+    return res.status(200).json({
+      status: "success",
+      items
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "No se pudo realizar la búsqueda",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   pruebaPublication,
   createPublication,
@@ -712,5 +818,6 @@ module.exports = {
   savePublication,
   unsavePublication
   ,
-  deletePublication
+  deletePublication,
+  searchPublications
 };

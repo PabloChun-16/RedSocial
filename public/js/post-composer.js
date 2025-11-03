@@ -109,7 +109,16 @@
             <textarea id="composer-caption" placeholder="Escribe una descripción..."></textarea>
             <div class="composer-tags">
               <label for="composer-tags-input">Etiquetas (separadas por comas)</label>
-              <input id="composer-tags-input" type="text" placeholder="Ej: viaje, inspiración, arte" />
+              <div class="composer-tags__row">
+                <input id="composer-tags-input" type="text" placeholder="Ej: viaje, inspiración, arte" />
+                <button type="button" class="composer-tags__suggest-btn" title="Sugerir etiquetas" aria-label="Sugerir etiquetas automáticas">
+                  <span class="composer-tags__icon" aria-hidden="true">✨</span>
+                </button>
+              </div>
+              <div class="composer-tags__suggestions composer-hidden">
+                <span class="composer-tags__hint">Etiquetas sugeridas</span>
+                <div class="composer-tags__chips"></div>
+              </div>
             </div>
           </form>
           <div class="composer-actions">
@@ -138,6 +147,11 @@
       this.storyState = {
         texts: [],
         selectedId: null
+      };
+      this.aiState = {
+        suggestions: [],
+        fetched: false,
+        pending: false
       };
       this.mode = "publication";
       this.listeners = new Set();
@@ -184,6 +198,11 @@
       this.storyYInput = this.backdrop.querySelector("#story-text-y");
       this.captionInput = this.backdrop.querySelector("#composer-caption");
       this.tagsInput = this.backdrop.querySelector("#composer-tags-input");
+      this.suggestBtn = this.backdrop.querySelector(".composer-tags__suggest-btn");
+      this.suggestBox = this.backdrop.querySelector(".composer-tags__suggestions");
+      this.suggestChips = this.backdrop.querySelector(".composer-tags__chips");
+      this.suggestHint = this.backdrop.querySelector(".composer-tags__hint");
+      this.suggestIcon = this.backdrop.querySelector(".composer-tags__icon");
       this.visibilitySelect = this.backdrop.querySelector("#composer-visibility");
       this.closeBtn = this.backdrop.querySelector(".composer-close");
       this.cancelBtns = Array.from(this.backdrop.querySelectorAll(".btn-cancel"));
@@ -287,6 +306,150 @@
       });
     }
 
+    escapeHtml(value) {
+      if (value === null || value === undefined) return "";
+      return value
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    resetSuggestions() {
+      this.aiState = {
+        suggestions: [],
+        fetched: false,
+        pending: false
+      };
+      this.renderSuggestedTags();
+      this.updateSuggestButton();
+    }
+
+    renderSuggestedTags() {
+      if (!this.suggestBox || !this.suggestChips) return;
+      const suggestions = Array.isArray(this.aiState.suggestions)
+        ? this.aiState.suggestions.filter(Boolean)
+        : [];
+      if (suggestions.length === 0) {
+        if (this.aiState.fetched) {
+          this.suggestBox.classList.remove("composer-hidden");
+          this.suggestChips.innerHTML =
+            '<span class="composer-tags__empty">No se encontraron sugerencias.</span>';
+        } else {
+          this.suggestBox.classList.add("composer-hidden");
+          this.suggestChips.innerHTML = "";
+        }
+        return;
+      }
+      const active = new Set(
+        this.parseInputTags().map((tag) => tag.toLowerCase())
+      );
+      const chips = suggestions
+        .map((tag) => {
+          const safe = this.escapeHtml(tag);
+          const isActive = active.has(tag.toLowerCase());
+          const classes = `composer-tag-chip${isActive ? " is-active" : ""}`;
+          return `<button type="button" class="${classes}" data-tag="${safe}">#${safe}</button>`;
+        })
+        .join("");
+      this.suggestChips.innerHTML = chips;
+      this.suggestBox.classList.remove("composer-hidden");
+    }
+
+    updateSuggestButton() {
+      if (!this.suggestBtn) return;
+      const hasFile = Boolean(this.state.file);
+      this.suggestBtn.disabled = !hasFile || this.aiState.pending;
+      this.suggestBtn.classList.toggle("is-loading", this.aiState.pending);
+      if (this.suggestIcon) {
+        this.suggestIcon.textContent = this.aiState.pending ? "…" : "✨";
+      }
+    }
+
+    parseInputTags() {
+      if (!this.tagsInput) return [];
+      return this.tagsInput.value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+    }
+
+    setInputTags(tags) {
+      if (!this.tagsInput) return;
+      const unique = [];
+      tags.forEach((tag) => {
+        const normalized = tag.trim();
+        if (!normalized) return;
+        if (!unique.some((item) => item.toLowerCase() === normalized.toLowerCase())) {
+          unique.push(normalized);
+        }
+      });
+      this.tagsInput.value = unique.join(", ");
+    }
+
+    applySuggestedTag(tag) {
+      if (typeof tag !== "string" || !tag.trim()) return;
+      const list = this.parseInputTags();
+      const normalized = tag.trim();
+      if (!list.some((item) => item.toLowerCase() === normalized.toLowerCase())) {
+        list.push(normalized);
+        this.setInputTags(list);
+      }
+      this.renderSuggestedTags();
+    }
+
+    async requestSuggestions() {
+      if (this.aiState.pending) return;
+      if (!this.state.file) {
+        this.showError("Selecciona una imagen para sugerir etiquetas.");
+        return;
+      }
+      const token = this.token();
+      if (!token) {
+        window.location.replace("/index.html");
+        return;
+      }
+      this.clearError();
+      this.aiState.pending = true;
+      this.updateSuggestButton();
+      try {
+        const formData = new FormData();
+        formData.append("image", this.state.file);
+        const response = await fetch("/api/ai/suggest-tags", {
+          method: "POST",
+          headers: { Authorization: token },
+          body: formData
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message =
+            payload?.error ||
+            payload?.message ||
+            "No se pudieron obtener etiquetas sugeridas.";
+          throw new Error(message);
+        }
+        const suggestions = Array.isArray(payload?.suggestions)
+          ? payload.suggestions
+              .map((tag) => (typeof tag === "string" ? tag.trim().toLowerCase() : ""))
+              .filter(Boolean)
+          : [];
+        this.aiState.suggestions = Array.from(new Set(suggestions));
+        this.aiState.fetched = true;
+        this.renderSuggestedTags();
+        if (!suggestions.length) {
+          console.warn("[POST] No se recibieron sugerencias para la imagen.");
+        }
+      } catch (error) {
+        console.error("[POST] ERROR al obtener etiquetas sugeridas:", error);
+        this.showError(error.message || "No se pudieron obtener etiquetas sugeridas.");
+      } finally {
+        this.aiState.pending = false;
+        this.updateSuggestButton();
+      }
+    }
+
     attachEvents() {
       this.closeBtn.addEventListener("click", () => this.close());
       this.cancelBtns.forEach((btn) => btn.addEventListener("click", () => this.close()));
@@ -310,6 +473,10 @@
         if (file) this.handleFile(file);
       });
 
+      if (this.tagsInput) {
+        this.tagsInput.addEventListener("input", () => this.renderSuggestedTags());
+      }
+
       ["dragenter", "dragover"].forEach((eventName) => {
         this.uploadArea.addEventListener(eventName, (event) => {
           event.preventDefault();
@@ -328,6 +495,18 @@
         const file = event.dataTransfer?.files?.[0];
         if (file) this.handleFile(file);
       });
+
+      if (this.suggestBtn) {
+        this.suggestBtn.addEventListener("click", () => this.requestSuggestions());
+      }
+      if (this.suggestChips) {
+        this.suggestChips.addEventListener("click", (event) => {
+          const target = event.target.closest("[data-tag]");
+          if (!target) return;
+          event.preventDefault();
+          this.applySuggestedTag(target.dataset.tag);
+        });
+      }
 
       this.sliders.forEach((slider) => {
         slider.addEventListener("input", () => {
@@ -391,6 +570,9 @@
           this.updateSelectedStoryText({ y: Number.isFinite(value) ? value / 100 : 0.5 }, { skipTextSync: true });
         });
       }
+
+      this.renderSuggestedTags();
+      this.updateSuggestButton();
 
       window.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && this.backdrop.classList.contains("is-visible")) {
@@ -770,6 +952,7 @@
       if (this.previewOverlay && this.mode === "story") {
         this.previewOverlay.classList.remove("composer-hidden");
       }
+      this.resetSuggestions();
       // Actualiza la imagen en las miniaturas de filtros y aplica el filtro al preview
       this.renderFilters();
       this.applyPreviewFilter();
@@ -814,6 +997,7 @@
         const key = slider.name;
         slider.value = DEFAULT_ADJUSTMENTS[key] ?? 0;
       });
+      this.resetSuggestions();
       this.renderFilters();
       this.applyPreviewFilter();
       this.clearError();
@@ -976,6 +1160,9 @@
         formData.append("filter", this.state.filter);
         formData.append("adjustments", JSON.stringify(this.state.adjustments));
         formData.append("visibility", this.visibilitySelect.value);
+        if (Array.isArray(this.aiState.suggestions) && this.aiState.suggestions.length) {
+          formData.append("autoTags", JSON.stringify(this.aiState.suggestions));
+        }
 
         const response = await fetch("/api/publication", {
           method: "POST",
