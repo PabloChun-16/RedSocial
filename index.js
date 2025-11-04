@@ -54,6 +54,7 @@ app.use(express.static("public"));
 // Rutas
 const authRoutes = require("./routes/auth");
 const aiRoutes = require("./routes/ai");
+const searchRoutes = require("./routes/search");
 const userRoutes = require("./routes/user");
 const publicationRoutes = require("./routes/publication");
 const followRoutes = require("./routes/follow");
@@ -64,6 +65,7 @@ const messageRoutes = require("./routes/message");
 app.get("/api/debug-aws", debugAws);
 app.use("/api/auth", authRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/search", searchRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/publication", publicationRoutes);
 app.use("/api/follow", followRoutes);

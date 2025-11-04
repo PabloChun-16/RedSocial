@@ -120,7 +120,9 @@ body.theme-day .btn-ghost:hover{ background:rgba(24,36,68,.08); }
   padding:12px 22px;
   font-weight:600;
   cursor:pointer;
-  transition:transform .25s ease, box-shadow .25s ease;
+  transition:
+    transform var(--motion-duration-sm, .25s) var(--motion-ease-out-back, ease),
+    box-shadow var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease);
   border:1px solid transparent;
 }
 
@@ -147,6 +149,7 @@ body.theme-day .btn-ghost:hover{ background:rgba(24,36,68,.08); }
 
 body.theme-day .btn-secondary{ background:rgba(255,255,255,.82); }
 body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36,68,.12); }
+body.theme-day .profile-card--skeleton{ background:rgba(255,255,255,.88); border-color:rgba(24,36,68,.12); }
 
 .profile-highlights{
   padding:28px clamp(22px,4vw,36px);
@@ -190,7 +193,10 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   flex-direction:column;
   gap:12px;
   text-align:center;
-  transition:transform .3s ease, border-color .3s ease, background .3s ease;
+  transition:
+    transform var(--motion-duration-md, .3s) var(--motion-ease-out-back, ease),
+    border-color var(--motion-duration-md, .3s) var(--motion-ease-standard, ease),
+    background var(--motion-duration-md, .3s) var(--motion-ease-standard, ease);
 }
 
 .highlight-card:hover{
@@ -288,6 +294,10 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   gap:22px;
 }
 
+.profile-grid.is-skeleton{
+  pointer-events:none;
+}
+
 .profile-card{
   position:relative;
   border-radius:24px;
@@ -295,7 +305,10 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   cursor:pointer;
   background:rgba(0,0,0,.28);
   border:1px solid rgba(255,255,255,.14);
-  transition:transform .3s ease, box-shadow .3s ease, border-color .3s ease;
+  transition:
+    transform var(--motion-duration-md, .3s) var(--motion-ease-out-back, ease),
+    box-shadow var(--motion-duration-md, .3s) var(--motion-ease-standard, ease),
+    border-color var(--motion-duration-md, .3s) var(--motion-ease-standard, ease);
 }
 
 .profile-card img{
@@ -305,12 +318,25 @@ body.theme-day .btn-soft{ background:rgba(24,36,68,.06); border-color:rgba(24,36
   display:block;
 }
 
+.profile-card--skeleton{
+  cursor:default;
+  aspect-ratio:1 / 1;
+  background:rgba(255,255,255,.06);
+  border-color:rgba(255,255,255,.12);
+}
+
+.profile-card--skeleton .skeleton--tile{
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+}
+
 .profile-card__overlay{
   position:absolute;
   inset:0;
   background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.45));
   opacity:0;
-  transition:opacity .3s ease;
+  transition:opacity var(--motion-duration-md, .3s) var(--motion-ease-standard, ease);
   display:flex;
   flex-direction:column;
   justify-content:flex-end;

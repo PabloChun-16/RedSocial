@@ -68,8 +68,11 @@
           <span class="brand-sub">Moments</span>
         </a>
         <label class="search" id="app-search">
-          <input id="app-search-input" type="search" placeholder="" />
+          <input id="app-search-input" type="search" placeholder="" autocomplete="off" />
           <span class="icon-search" aria-hidden="true"></span>
+          <div class="search-suggestions" id="app-search-suggestions" hidden>
+            <div class="search-suggestions__list" id="app-search-suggestions-list"></div>
+          </div>
         </label>
         <nav class="top-actions">
           <button id="app-theme-toggle" class="toggle-theme" type="button">
@@ -125,6 +128,313 @@
 
   const userListeners = new Set();
   let refs = null;
+  const searchState = {
+    query: "",
+    suggestions: [],
+    highlightedIndex: -1,
+    open: false,
+    loading: false,
+    timer: null,
+    message: "",
+    abortController: null,
+    lastFetched: ""
+  };
+
+  function escapeHtml(value){
+    if(value === null || value === undefined) return "";
+    return value
+      .toString()
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function closeSearchSuggestions({ reset = true } = {}){
+    searchState.open = false;
+    searchState.loading = false;
+    searchState.message = "";
+    if(reset){
+      searchState.highlightedIndex = -1;
+      searchState.suggestions = [];
+    }
+    if(searchState.abortController){
+      try{ searchState.abortController.abort(); }catch(_err){}
+      searchState.abortController = null;
+    }
+    if(refs?.searchSuggestions){
+      refs.searchSuggestions.hidden = true;
+    }
+  }
+
+  function ensureHighlightedVisible(){
+    if(!refs?.searchSuggestionsList) return;
+    const index = searchState.highlightedIndex;
+    if(index < 0) return;
+    const node = refs.searchSuggestionsList.querySelector(`[data-index="${index}"]`);
+    if(!node) return;
+    const parent = refs.searchSuggestionsList;
+    const top = node.offsetTop;
+    const bottom = top + node.offsetHeight;
+    if(top < parent.scrollTop){
+      parent.scrollTop = top;
+    }else if(bottom > parent.scrollTop + parent.clientHeight){
+      parent.scrollTop = bottom - parent.clientHeight;
+    }
+  }
+
+  function renderSearchSuggestions(){
+    if(!refs?.searchSuggestions || !refs?.searchSuggestionsList) return;
+    if(!searchState.open){
+      refs.searchSuggestions.hidden = true;
+      refs.searchSuggestionsList.innerHTML = "";
+      return;
+    }
+    let innerHtml = "";
+    if(searchState.loading){
+      innerHtml = '<div class="search-suggestions__empty">Buscando...</div>';
+    }else if(searchState.message){
+      innerHtml = `<div class="search-suggestions__empty">${escapeHtml(searchState.message)}</div>`;
+    }else if(!searchState.suggestions.length){
+      innerHtml = '<div class="search-suggestions__empty">No se encontraron coincidencias</div>';
+    }else{
+      innerHtml = searchState.suggestions
+        .map((user, index) => {
+          const active = index === searchState.highlightedIndex ? " is-active" : "";
+          const avatar = escapeHtml(user.image || "/media/iconobase.png");
+          const name = escapeHtml(user.name || user.nick || "Usuario");
+          const nick = user.nick ? `@${escapeHtml(user.nick)}` : "";
+          const bio = user.bio ? escapeHtml(user.bio) : "";
+          const subtitle = nick && bio ? `${nick} · ${bio}` : nick || bio;
+          return `<button type="button" class="search-suggestions__item${active}" data-index="${index}" data-id="${escapeHtml(user.id || "")}" data-nick="${escapeHtml(user.nick || "")}">
+              <img class="search-suggestions__avatar" src="${avatar}" alt="${name}" />
+              <div class="search-suggestions__meta">
+                <span class="search-suggestions__name">${name}</span>
+                <span class="search-suggestions__nick">${subtitle}</span>
+              </div>
+            </button>`;
+        })
+        .join("");
+    }
+    refs.searchSuggestionsList.innerHTML = innerHtml;
+    refs.searchSuggestions.hidden = false;
+    ensureHighlightedVisible();
+  }
+
+  function setHighlightedSuggestion(index){
+    if(!searchState.suggestions.length){
+      searchState.highlightedIndex = -1;
+      renderSearchSuggestions();
+      return;
+    }
+    let nextIndex = index;
+    if(nextIndex < 0){
+      nextIndex = searchState.suggestions.length - 1;
+    }else if(nextIndex >= searchState.suggestions.length){
+      nextIndex = 0;
+    }
+    searchState.highlightedIndex = nextIndex;
+    renderSearchSuggestions();
+  }
+
+  async function fetchSearchSuggestions(query){
+    try{
+      if(searchState.abortController){
+        searchState.abortController.abort();
+      }
+      const token = localStorage.getItem("token");
+      if(!token){
+        searchState.loading = false;
+        searchState.suggestions = [];
+        searchState.message = "";
+        renderSearchSuggestions();
+        return;
+      }
+      const controller = new AbortController();
+      searchState.abortController = controller;
+      const res = await fetch(`/api/search/users?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: token },
+        signal: controller.signal
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw new Error(data?.error || data?.message || `Error ${res.status}`);
+      }
+      const suggestions = Array.isArray(data?.users) ? data.users : [];
+      searchState.suggestions = suggestions;
+      searchState.loading = false;
+      searchState.message = suggestions.length ? "" : "No se encontraron coincidencias";
+      searchState.open = true;
+      searchState.highlightedIndex = -1;
+      searchState.lastFetched = query;
+      renderSearchSuggestions();
+      searchState.abortController = null;
+    }catch(error){
+      if(error.name === "AbortError") return;
+      console.warn("No se pudieron obtener sugerencias", error);
+      searchState.loading = false;
+      searchState.suggestions = [];
+      searchState.message = "No se pudieron obtener sugerencias";
+      searchState.open = true;
+      renderSearchSuggestions();
+      searchState.abortController = null;
+    }
+  }
+
+  function handleSuggestionSelection(user){
+    if(!user) return;
+    closeSearchSuggestions();
+    const nick = user.nick ? user.nick.trim() : "";
+    const id = user.id ? user.id.toString() : "";
+    if(nick){
+      window.location.href = `/profile-view.html?nick=${encodeURIComponent(nick)}`;
+      return;
+    }
+    if(id){
+      window.location.href = `/profile-view.html?id=${encodeURIComponent(id)}`;
+      return;
+    }
+  }
+
+  function submitSearch(query){
+    const trimmed = (query || "").trim();
+    if(!trimmed){
+      closeSearchSuggestions();
+      if(state.page === "feed"){
+        document.dispatchEvent(new CustomEvent("search:submitted", { detail: { query: "" } }));
+      }
+      return;
+    }
+    closeSearchSuggestions();
+    if(state.page === "feed"){
+      document.dispatchEvent(new CustomEvent("search:submitted", { detail: { query: trimmed } }));
+    }else{
+      window.location.href = `/feed.html?q=${encodeURIComponent(trimmed)}`;
+    }
+  }
+
+  function handleSearchInput(event){
+    const value = event.target.value || "";
+    searchState.query = value;
+    if(searchState.timer){
+      clearTimeout(searchState.timer);
+      searchState.timer = null;
+    }
+    const trimmed = value.trim();
+    if(!trimmed){
+      searchState.suggestions = [];
+      searchState.message = "";
+      searchState.loading = false;
+      closeSearchSuggestions();
+      return;
+    }
+    if(trimmed === searchState.lastFetched && searchState.suggestions.length){
+      searchState.loading = false;
+      searchState.open = true;
+      searchState.message = "";
+      renderSearchSuggestions();
+      return;
+    }
+    searchState.loading = true;
+    searchState.open = true;
+    searchState.message = "";
+    renderSearchSuggestions();
+    searchState.timer = setTimeout(() => {
+      fetchSearchSuggestions(trimmed);
+      searchState.timer = null;
+    }, 220);
+  }
+
+  function handleSearchFocus(){
+    if(!refs?.searchInput) return;
+    if(searchState.suggestions.length){
+      searchState.open = true;
+      renderSearchSuggestions();
+    }else if(searchState.query.trim()){
+      const trimmed = searchState.query.trim();
+      if(trimmed === searchState.lastFetched && searchState.suggestions.length){
+        searchState.loading = false;
+        searchState.open = true;
+        renderSearchSuggestions();
+        return;
+      }
+      searchState.loading = true;
+      searchState.open = true;
+      renderSearchSuggestions();
+      fetchSearchSuggestions(trimmed);
+    }
+  }
+
+  function handleSearchKeydown(event){
+    if(event.key === "ArrowDown"){
+      if(!searchState.open){
+        searchState.open = true;
+        renderSearchSuggestions();
+      }
+      setHighlightedSuggestion(searchState.highlightedIndex + 1);
+      event.preventDefault();
+      return;
+    }
+    if(event.key === "ArrowUp"){
+      if(!searchState.open){
+        searchState.open = true;
+        renderSearchSuggestions();
+      }
+      setHighlightedSuggestion(searchState.highlightedIndex - 1);
+      event.preventDefault();
+      return;
+    }
+    if(event.key === "Enter"){
+      event.preventDefault();
+      if(searchState.open && searchState.highlightedIndex >= 0){
+        const suggestion = searchState.suggestions[searchState.highlightedIndex];
+        if(suggestion){
+          handleSuggestionSelection(suggestion);
+          return;
+        }
+      }
+      submitSearch(searchState.query);
+      return;
+    }
+    if(event.key === "Escape"){
+      closeSearchSuggestions();
+    }
+  }
+
+  function handleSuggestionClick(event){
+    const target = event.target.closest("[data-index]");
+    if(!target) return;
+    const index = Number.parseInt(target.dataset.index, 10);
+    if(Number.isNaN(index)) return;
+    const suggestion = searchState.suggestions[index];
+    handleSuggestionSelection(suggestion);
+  }
+
+  function handleSearchBlur(){
+    setTimeout(() => {
+      if(!document.activeElement || !refs?.searchSuggestions?.contains(document.activeElement)){
+        closeSearchSuggestions();
+      }
+    }, 120);
+  }
+
+  function handleDocumentClick(event){
+    if(!refs?.searchWrapper) return;
+    if(refs.searchWrapper.contains(event.target)) return;
+    closeSearchSuggestions();
+  }
+
+  function initSearchControls(){
+    if(!refs?.searchInput) return;
+    refs.searchInput.addEventListener("input", handleSearchInput);
+    refs.searchInput.addEventListener("focus", handleSearchFocus);
+    refs.searchInput.addEventListener("keydown", handleSearchKeydown);
+    refs.searchInput.addEventListener("blur", handleSearchBlur);
+    refs.searchSuggestions?.addEventListener("mousedown", (event) => event.preventDefault());
+    refs.searchSuggestions?.addEventListener("click", handleSuggestionClick);
+    document.addEventListener("click", handleDocumentClick);
+  }
 
   function normalizeAssetPath(value, fallbackFolder = ""){
     if(!value) return "";
@@ -607,6 +917,8 @@
     refs = {
       searchWrapper: root.querySelector("#app-search"),
       searchInput: root.querySelector("#app-search-input"),
+      searchSuggestions: root.querySelector("#app-search-suggestions"),
+      searchSuggestionsList: root.querySelector("#app-search-suggestions-list"),
       themeToggle: root.querySelector("#app-theme-toggle"),
       profileAvatar: root.querySelector("#app-profile-avatar"),
       profileName: root.querySelector("#app-profile-name"),
@@ -658,8 +970,47 @@
       });
     });
 
-    if(pageFragment && pageFragment.childNodes.length){
-      appShell.content.appendChild(pageFragment);
+    initSearchControls();
+
+    if(pageFragment && pageFragment.fragment && pageFragment.fragment.childNodes.length){
+      const surface = document.createElement("div");
+      const meta = pageFragment.meta || {};
+      const originalClass =
+        typeof meta.className === "string" ? meta.className.trim() : "";
+      surface.className = originalClass ? `${originalClass} page-surface` : "page-surface";
+      if(meta.id){
+        surface.id = meta.id;
+      }
+      if(meta.dataset){
+        Object.entries(meta.dataset).forEach(([key, value]) => {
+          if(typeof value === "string"){
+            surface.dataset[key] = value;
+          }
+        });
+      }
+      if(Array.isArray(meta.attributes)){
+        meta.attributes.forEach((attr) => {
+          if(
+            !attr ||
+            !attr.name ||
+            attr.name === "id" ||
+            attr.name === "class" ||
+            attr.name === "hidden"
+          ){
+            return;
+          }
+          surface.setAttribute(attr.name, attr.value ?? "");
+        });
+      }
+      appShell.content.appendChild(surface);
+      surface.appendChild(pageFragment.fragment);
+      appShell.pageSurface = surface;
+      requestAnimationFrame(() => {
+        surface.classList.add("is-mounted");
+      });
+    }else if(pageFragment && pageFragment.fragment){
+      appShell.content.appendChild(pageFragment.fragment);
+      appShell.pageSurface = null;
     }
 
     closeCreateMenu();
@@ -676,8 +1027,17 @@
     while(container.firstChild){
       fragment.appendChild(container.firstChild);
     }
+    const meta = {
+      id: container.id || "",
+      className: container.className || "",
+      dataset: { ...container.dataset },
+      attributes: Array.from(container.attributes || []).map((attr) => ({
+        name: attr.name,
+        value: attr.value
+      }))
+    };
     container.remove();
-    return fragment;
+    return { fragment, meta };
   }
 
   function init(){
@@ -707,9 +1067,24 @@
     state,
     refs,
     content: null,
+    pageSurface: null,
     setSearchPlaceholder(placeholder){
       if(!refs?.searchInput) return;
       refs.searchInput.placeholder = placeholder || "";
+    },
+    setSearchValue(value){
+      if(refs?.searchInput){
+        refs.searchInput.value = value || "";
+      }
+      searchState.query = value || "";
+      if(!value){
+        searchState.suggestions = [];
+        searchState.message = "";
+        closeSearchSuggestions();
+      }
+    },
+    hideSearchSuggestions(){
+      closeSearchSuggestions();
     },
     setSearchVisibility(visible){
       if(!refs?.searchWrapper) return;

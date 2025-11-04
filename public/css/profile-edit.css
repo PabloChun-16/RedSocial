@@ -53,7 +53,9 @@
   color:#fff;
   font-weight:600;
   cursor:pointer;
-  transition:transform .25s ease, box-shadow .25s ease;
+  transition:
+    transform var(--motion-duration-sm, .25s) var(--motion-ease-out-back, ease),
+    box-shadow var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease);
 }
 
 .avatar-upload:hover{ transform:translateY(-1px); box-shadow:0 18px 36px rgba(0,0,0,.32); }
@@ -99,7 +101,10 @@
   color:inherit;
   padding:12px 16px;
   font-family:inherit;
-  transition:border-color .25s ease, box-shadow .25s ease, background .25s ease;
+  transition:
+    border-color var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease),
+    box-shadow var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease),
+    background var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease);
 }
 
 .field input:focus{
@@ -140,7 +145,9 @@ body.theme-day .field input{
   padding:12px 22px;
   font-weight:600;
   cursor:pointer;
-  transition:transform .25s ease, box-shadow .25s ease;
+  transition:
+    transform var(--motion-duration-sm, .25s) var(--motion-ease-out-back, ease),
+    box-shadow var(--motion-duration-sm, .25s) var(--motion-ease-standard, ease);
   border:1px solid transparent;
 }
 

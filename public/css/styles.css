@@ -8,6 +8,13 @@
   --accent: #1da1ff;
   --accent-press: #108de0;
   --shadow: 0 10px 40px rgba(0,0,0,.35);
+  --motion-duration-xs: 120ms;
+  --motion-duration-sm: 200ms;
+  --motion-duration-md: 360ms;
+  --motion-duration-lg: 560ms;
+  --motion-ease-standard: cubic-bezier(.4,0,.2,1);
+  --motion-ease-emphasized: cubic-bezier(.25,.8,.25,1);
+  --motion-ease-out-back: cubic-bezier(.34,1.56,.64,1);
 }
 
 html, body { height: 100%; }
@@ -18,7 +25,18 @@ body.auth {
   background: #0f1115;
   --card-width: 840px;
   --form-column-size: 360px;
-  transition: background-color .75s ease, color .75s ease;
+  opacity: 0;
+  transform: translate3d(0, 24px, 0);
+  transition:
+    background-color var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease),
+    color var(--motion-duration-md, .75s) var(--motion-ease-standard, ease),
+    opacity var(--motion-duration-lg, .6s) var(--motion-ease-emphasized, ease),
+    transform var(--motion-duration-lg, .6s) var(--motion-ease-emphasized, ease);
+}
+
+body.auth.is-loaded{
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
 }
 
 body.view-register{
@@ -104,14 +122,18 @@ body.is-theme-transition[data-theme-transition="day"] .video-fader{
   -webkit-backdrop-filter: blur(14px) saturate(120%);
   padding: 0;
   overflow: hidden;
-  transition: background .75s ease, border-color .75s ease, color .75s ease, width .75s ease;
+  transition:
+    background var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease),
+    border-color var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease),
+    color var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease),
+    width var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease);
 }
 
 .card-grid{
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(var(--form-column-size, 360px), 1fr);
   min-height: 520px;
-  transition: grid-template-columns .75s ease;
+  transition: grid-template-columns var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease);
   position: relative;
   z-index: 0;
 }
@@ -188,6 +210,40 @@ body.is-theme-transition[data-theme-transition="day"] .video-fader{
   to{
     opacity: 1;
     transform: translate3d(0,0,0);
+  }
+}
+
+body.auth.is-loaded:not(.run-intro) .glass-card{
+  animation: introCard var(--motion-duration-lg, .6s) var(--motion-ease-emphasized, ease) both;
+}
+
+body.auth.is-loaded:not(.run-intro) .hero-media{
+  animation: introHero var(--motion-duration-lg, .6s) var(--motion-ease-standard, ease) both;
+}
+
+body.auth.is-loaded .panel.active{
+  animation-delay: 80ms;
+}
+
+@keyframes introCard{
+  from{
+    opacity:0;
+    transform:translate3d(0,30px,0) scale(.95);
+  }
+  to{
+    opacity:1;
+    transform:translate3d(0,0,0) scale(1);
+  }
+}
+
+@keyframes introHero{
+  from{
+    opacity:0;
+    transform:translate3d(-24px,0,0);
+  }
+  to{
+    opacity:1;
+    transform:translate3d(0,0,0);
   }
 }
 
@@ -372,7 +428,7 @@ body.is-theme-transition[data-theme-transition="day"] .video-fader{
 
 /* ====== Paneles (solo el activo ocupa espacio) ====== */
 .panel{ display:none; width:100%; }
-.panel.active{ display:block; width:100%; animation: panelIn .24s ease both; }
+.panel.active{ display:block; width:100%; animation: panelIn var(--motion-duration-sm, .24s) var(--motion-ease-emphasized, ease) both; }
 @keyframes panelIn{
   from{ opacity:0; transform: translateY(8px) scale(.995); }
   to  { opacity:1; transform: translateY(0)   scale(1); }
@@ -545,8 +601,27 @@ body.is-theme-transition[data-theme-transition="day"] .video-fader{
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce){
-  .run-intro .auth-video, .run-intro.auth::before, .run-intro .glass-card{ animation:none !important; transition:none !important; }
-  .auth::before{ opacity:1; } .glass-card{ opacity:1; filter:none; transform:none; }
+  .run-intro .auth-video,
+  .run-intro.auth::before,
+  .run-intro .glass-card{
+    animation:none !important;
+    transition:none !important;
+  }
+
+  body.auth{
+    opacity:1;
+    transform:none;
+    transition: background-color var(--motion-duration-lg, .75s) var(--motion-ease-standard, ease), color var(--motion-duration-md, .75s) var(--motion-ease-standard, ease);
+  }
+
+  body.auth.is-loaded .glass-card,
+  body.auth.is-loaded .hero-media,
+  .panel.active{
+    animation:none !important;
+  }
+
+  .auth::before{ opacity:1; }
+  .glass-card{ opacity:1; filter:none; transform:none; }
 }
 
 

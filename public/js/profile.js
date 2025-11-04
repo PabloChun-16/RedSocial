@@ -314,6 +314,7 @@
 
   function renderGallery(tab){
     if(!els.gallery || !els.galleryTitle || !els.galleryEmpty) return;
+    clearGallerySkeleton();
     const key = tab || state.currentTab;
     state.currentTab = key;
     const dataset = state.collections[key] ?? [];
@@ -388,6 +389,46 @@
       card.addEventListener("click", () => openPublicationModal(item.id));
       els.gallery.appendChild(card);
     });
+  }
+
+  function buildGallerySkeletonItem(index){
+    if(!els.gallery) return null;
+    const card = document.createElement("article");
+    card.className = "profile-card profile-card--skeleton";
+    card.setAttribute("aria-hidden", "true");
+    card.tabIndex = -1;
+    card.dataset.index = index.toString();
+    card.innerHTML = '<span class="skeleton skeleton--tile"></span>';
+    return card;
+  }
+
+  function showGallerySkeleton(count = 6){
+    if(!els.gallery) return;
+    const total = Number.isFinite(count) && count > 0 ? count : 6;
+    els.gallery.hidden = false;
+    els.gallery.classList.add("is-skeleton");
+    els.gallery.setAttribute("aria-busy", "true");
+    els.gallery.dataset.state = "loading";
+    els.gallery.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    for(let i = 0; i < total; i += 1){
+      const skeleton = buildGallerySkeletonItem(i);
+      if(skeleton) fragment.appendChild(skeleton);
+    }
+    els.gallery.appendChild(fragment);
+    if(els.galleryEmpty){
+      els.galleryEmpty.hidden = true;
+    }
+  }
+
+  function clearGallerySkeleton(){
+    if(!els.gallery) return;
+    if(els.gallery.dataset.state === "loading"){
+      delete els.gallery.dataset.state;
+      els.gallery.innerHTML = "";
+    }
+    els.gallery.classList.remove("is-skeleton");
+    els.gallery.removeAttribute("aria-busy");
   }
 
   function initTabs(){
@@ -484,6 +525,7 @@
   async function fetchUserPublications(){
     const token = localStorage.getItem("token");
     if(!token) return;
+    showGallerySkeleton();
     try{
       const [ownRes, savedRes] = await Promise.all([
         fetch("/api/publication/user/me", {
@@ -514,6 +556,8 @@
       renderGallery(state.currentTab);
     }catch(error){
       console.error(error);
+    }finally{
+      clearGallerySkeleton();
     }
   }
 

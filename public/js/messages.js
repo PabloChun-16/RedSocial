@@ -208,10 +208,29 @@
 
   function setLoadingConversation(loading){
     state.loadingConversation = loading;
-    els.body.classList.toggle("is-loading", loading);
+    if(els.body){
+      els.body.classList.toggle("is-loading", loading);
+      if(loading){
+        renderConversationSkeleton();
+      }else{
+        els.body.removeAttribute("aria-busy");
+      }
+    }
     if(els.composeForm){
       els.composeForm.classList.toggle("is-disabled", loading);
-      els.composeForm.querySelector("button[type=\"submit\"]")?.setAttribute("aria-busy", String(loading));
+      if(loading){
+        els.composeForm.setAttribute("aria-disabled", "true");
+      }else{
+        els.composeForm.removeAttribute("aria-disabled");
+      }
+      const submitBtn = els.composeForm.querySelector("button[type=\"submit\"]");
+      if(submitBtn){
+        if(loading){
+          submitBtn.setAttribute("aria-busy", "true");
+        }else{
+          submitBtn.removeAttribute("aria-busy");
+        }
+      }
     }
   }
 
@@ -253,6 +272,7 @@
 
   function renderThreads(){
     if(!els.threadList) return;
+    clearThreadSkeleton();
     els.threadList.innerHTML = "";
     if(!state.filteredThreads.length){
       const empty = document.createElement("p");
@@ -326,6 +346,72 @@
       }
     });
     els.threadList.appendChild(fragment);
+  }
+
+  function buildThreadSkeleton(index){
+    const item = document.createElement("div");
+    item.className = "messages-thread messages-thread--skeleton";
+    item.setAttribute("aria-hidden", "true");
+    item.tabIndex = -1;
+    item.innerHTML = `
+      <span class="messages-thread__avatar">
+        <span class="skeleton skeleton--circle skeleton--avatar"></span>
+      </span>
+      <div class="messages-thread__body">
+        <span class="skeleton skeleton--line skeleton--w-80"></span>
+        <span class="skeleton skeleton--line skeleton--w-60"></span>
+      </div>`;
+    item.dataset.index = index.toString();
+    return item;
+  }
+
+  function showThreadSkeleton(count = 6){
+    if(!els.threadList) return;
+    const total = Number.isFinite(count) && count > 0 ? count : 6;
+    els.threadList.dataset.state = "loading";
+    els.threadList.setAttribute("aria-busy", "true");
+    els.threadList.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    for(let i = 0; i < total; i += 1){
+      fragment.appendChild(buildThreadSkeleton(i));
+    }
+    els.threadList.appendChild(fragment);
+  }
+
+  function clearThreadSkeleton(){
+    if(!els.threadList) return;
+    if(els.threadList.dataset.state === "loading"){
+      delete els.threadList.dataset.state;
+      els.threadList.innerHTML = "";
+    }
+    els.threadList.removeAttribute("aria-busy");
+  }
+
+  function renderConversationSkeleton(){
+    if(!els.body) return;
+    els.body.setAttribute("aria-busy", "true");
+    els.body.classList.add("is-loading");
+    if(els.placeholder) els.placeholder.hidden = true;
+    if(els.header) els.header.hidden = true;
+    if(els.inputBar) els.inputBar.hidden = true;
+    els.body.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    const sampleWidths = ["80", "60", "70", "55"];
+    sampleWidths.forEach((width, index) => {
+      const row = document.createElement("div");
+      row.className = "message-row message-row--skeleton";
+      if(index % 2 === 1){
+        row.classList.add("is-own");
+      }
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble skeleton skeleton--bubble skeleton--w-" + width;
+      row.appendChild(bubble);
+      const meta = document.createElement("span");
+      meta.className = "message-meta skeleton skeleton--line skeleton--w-30";
+      row.appendChild(meta);
+      fragment.appendChild(row);
+    });
+    els.body.appendChild(fragment);
   }
 
   function renderPlaceholder(){
@@ -517,6 +603,9 @@
   async function loadThreads(){
     if(state.loadingThreads) return;
     state.loadingThreads = true;
+    if(!state.threads.length){
+      showThreadSkeleton();
+    }
     try{
       const data = await apiFetch("/api/messages/threads");
       setThreads(data.threads || []);
@@ -526,6 +615,7 @@
     }catch(error){
       showAlert(error.message || "No se pudieron cargar tus chats");
     }finally{
+      clearThreadSkeleton();
       state.loadingThreads = false;
     }
   }
@@ -670,7 +760,9 @@
         openConversationBy({ contactId: userId, focusComposer: true });
       }
     }else if(state.filteredThreads.length){
-      highlightActive(state.filteredThreads[0].contact.id);
+      const first = state.filteredThreads[0];
+      // Abrir automáticamente el primer hilo para evitar página en blanco
+      openConversationBy({ conversationId: first.conversationId || undefined, contactId: first.contact?.id, focusComposer: false });
     }else{
       renderPlaceholder();
     }

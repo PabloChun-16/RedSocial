@@ -51,11 +51,18 @@
   const FEED_STATE = {
     posts: []
   };
+  const SEARCH_STATE = {
+    active: false,
+    query: "",
+    loading: false,
+    error: ""
+  };
   const STORY_STATE = {
     groups: [],
     pulseTimer: null
   };
   const STORY_DURATION_MS = 3000;
+  const FEED_SKELETON_COUNT = 4;
 
   const AVATAR_DEFAULT = "/media/iconobase.png";
   const AVATAR_FALLBACK =
@@ -63,11 +70,13 @@
 
   let feedGrid = null;
   let feedEmpty = null;
+  let feedSearchHeader = null;
   let shell = null;
   let storiesRail = null;
   let storiesAddBtn = null;
   let storyViewer = null;
   let appUser = null;
+  const FEED_EMPTY_DEFAULT = { title: "", subtitle: "" };
   const relativeTime =
     typeof Intl !== "undefined" && Intl.RelativeTimeFormat
       ? new Intl.RelativeTimeFormat("es", { numeric: "auto" })
@@ -104,6 +113,17 @@
       ...owner,
       image: normalizeAssetPath(owner.image || owner.avatar || owner.photo || "", "avatars") || AVATAR_DEFAULT
     };
+  }
+
+  function escapeHtml(value){
+    if(value === null || value === undefined) return "";
+    return value
+      .toString()
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function formatRelativeTime(value){
@@ -176,6 +196,7 @@
           ? previous.saved
           : false,
       tags: Array.isArray(publication.tags) ? publication.tags : previous?.tags || [],
+      autoTags: Array.isArray(publication.autoTags) ? publication.autoTags : previous?.autoTags || [],
       comments: commentsSource,
       commentsCount:
         typeof publication.commentsCount === "number"
@@ -186,6 +207,27 @@
         ...(publication.adjustments || {})
       })
     };
+  }
+
+  function buildPostTagsMarkup(post){
+    const manual = Array.isArray(post.tags) ? post.tags : [];
+    const auto = Array.isArray(post.autoTags) ? post.autoTags : [];
+    if(!manual.length && !auto.length) return "";
+    const chips = [];
+    manual.forEach((tag) => {
+      const cleaned = typeof tag === "string" ? tag.trim() : "";
+      if(cleaned){
+        chips.push(`<span class="post__tag">#${escapeHtml(cleaned)}</span>`);
+      }
+    });
+    auto.forEach((tag) => {
+      const cleaned = typeof tag === "string" ? tag.trim() : "";
+      if(cleaned){
+        chips.push(`<span class="post__tag post__tag--auto">#${escapeHtml(cleaned)}</span>`);
+      }
+    });
+    if(!chips.length) return "";
+    return `<div class="post__tags">${chips.join("")}</div>`;
   }
 
   function getCurrentUser(){
@@ -405,23 +447,89 @@
     renderStoriesRail();
   }
 
+  function buildFeedSkeletonCard(index){
+    const card = document.createElement("article");
+    card.className = "post glass post--skeleton";
+    card.setAttribute("aria-hidden", "true");
+    card.tabIndex = -1;
+    card.innerHTML = `
+      <div class="post__header">
+        <span class="skeleton skeleton--circle skeleton--avatar"></span>
+        <div class="post__header-meta">
+          <span class="skeleton skeleton--line skeleton--w-60"></span>
+          <span class="skeleton skeleton--line skeleton--w-40"></span>
+        </div>
+      </div>
+      <div class="post__media">
+        <span class="skeleton skeleton--media" aria-hidden="true"></span>
+      </div>
+      <div class="post__actions post__actions--skeleton">
+        <span class="skeleton skeleton--chip skeleton--w-40"></span>
+        <span class="skeleton skeleton--chip skeleton--w-30"></span>
+        <span class="skeleton skeleton--chip skeleton--w-35"></span>
+      </div>
+      <div class="post__caption">
+        <span class="skeleton skeleton--line skeleton--w-80"></span>
+        <span class="skeleton skeleton--line skeleton--w-50"></span>
+      </div>`;
+    card.dataset.index = index.toString();
+    return card;
+  }
+
+  function showFeedSkeleton(count = FEED_SKELETON_COUNT){
+    if(!feedGrid || !feedEmpty) return;
+    feedGrid.hidden = false;
+    feedEmpty.hidden = true;
+    feedEmpty.style.display = "none";
+    feedGrid.classList.add("is-skeleton");
+    feedGrid.setAttribute("aria-busy", "true");
+    feedGrid.dataset.state = "loading";
+    feedGrid.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    const total = Number.isFinite(count) && count > 0 ? count : FEED_SKELETON_COUNT;
+    for(let i = 0; i < total; i += 1){
+      fragment.appendChild(buildFeedSkeletonCard(i));
+    }
+    feedGrid.appendChild(fragment);
+  }
+
+  function clearFeedSkeleton(){
+    if(!feedGrid) return;
+    feedGrid.classList.remove("is-skeleton");
+    if(feedGrid.dataset.state === "loading"){
+      delete feedGrid.dataset.state;
+    }
+    feedGrid.removeAttribute("aria-busy");
+  }
+
   function renderFeed(){
     if(!feedGrid || !feedEmpty) return;
+    clearFeedSkeleton();
     feedGrid.innerHTML = "";
+    feedGrid.dataset.state = SEARCH_STATE.active ? "search" : "feed";
+
+    if(SEARCH_STATE.active){
+      updateSearchHeader(FEED_STATE.posts.length);
+    }else{
+      updateSearchHeader(0);
+    }
 
     if(!FEED_STATE.posts.length){
+      updateFeedEmptyMessage();
       feedGrid.hidden = true;
       feedEmpty.hidden = false;
       feedEmpty.style.display = "";
       return;
     }
 
+    updateFeedEmptyMessage();
     feedGrid.hidden = false;
     feedEmpty.hidden = true;
     feedEmpty.style.display = "none";
 
     FEED_STATE.posts.forEach((post, index) => {
       const normalized = sanitizePublicationForClient(post);
+      const tagsMarkup = buildPostTagsMarkup(normalized);
       const ownerImage =
         normalizeAssetPath(normalized.owner?.image || AVATAR_DEFAULT, "avatars") ||
         AVATAR_DEFAULT;
@@ -461,9 +569,7 @@
           <button class="chip save${normalized.saved ? " is-active" : ""}" type="button" data-action="save">${normalized.saved ? "🔖 Guardado" : "📌 Guardar"}</button>
         </div>
         <p class="post__caption">${normalized.caption || "Sin descripción"}</p>
-        <div class="post__hashtags">${
-          normalized.tags?.length ? normalized.tags.map((tag) => `#${tag}`).join(" ") : ""
-        }</div>
+        ${tagsMarkup}
       `;
       const ownerButton = card.querySelector(".post__owner");
       if(ownerButton){
@@ -554,6 +660,130 @@
       });
       feedGrid.appendChild(card);
     });
+  }
+
+  function updateFeedEmptyMessage(){
+    if(!feedEmpty) return;
+    const title = feedEmpty.querySelector("h3");
+    const subtitle = feedEmpty.querySelector("p");
+    if(SEARCH_STATE.active){
+      const query = SEARCH_STATE.query || "";
+      if(title) title.textContent = SEARCH_STATE.error ? "No se pudo completar la búsqueda" : `No encontramos resultados para "${query}"`;
+      if(subtitle){
+        subtitle.textContent = SEARCH_STATE.error
+          ? SEARCH_STATE.error
+          : "Intenta con otras palabras o revisa tus etiquetas.";
+      }
+    }else{
+      if(title) title.textContent = FEED_EMPTY_DEFAULT.title;
+      if(subtitle) subtitle.textContent = FEED_EMPTY_DEFAULT.subtitle;
+    }
+  }
+
+  function updateSearchHeader(resultCount){
+    if(!feedSearchHeader) return;
+    if(!SEARCH_STATE.active){
+      feedSearchHeader.hidden = true;
+      const title = feedSearchHeader.querySelector("h2");
+      const detail = feedSearchHeader.querySelector("p");
+      if(title) title.textContent = "";
+      if(detail) detail.textContent = "";
+      return;
+    }
+    const title = feedSearchHeader.querySelector("h2");
+    const detail = feedSearchHeader.querySelector("p");
+    if(title){
+      const query = SEARCH_STATE.query || "";
+      title.textContent = SEARCH_STATE.loading
+        ? `Buscando "${query}"`
+        : `Resultados para "${query}"`;
+    }
+    if(detail){
+      if(SEARCH_STATE.loading){
+        detail.textContent = "Estamos encontrando publicaciones que coinciden con tu búsqueda.";
+      }else if(SEARCH_STATE.error){
+        detail.textContent = SEARCH_STATE.error;
+      }else if(resultCount === 0){
+        detail.textContent = "No se encontraron publicaciones. Prueba con otras palabras o etiquetas.";
+      }else if(resultCount === 1){
+        detail.textContent = "1 publicación encontrada.";
+      }else{
+        detail.textContent = `${resultCount} publicaciones encontradas.`;
+      }
+    }
+    feedSearchHeader.hidden = false;
+  }
+
+  async function performFeedSearch(query, { pushHistory = true } = {}){
+    const trimmed = (query || "").trim();
+    if(!trimmed){
+      SEARCH_STATE.active = false;
+      SEARCH_STATE.query = "";
+      SEARCH_STATE.loading = false;
+      SEARCH_STATE.error = "";
+      updateSearchHeader(0);
+      if(pushHistory){
+        history.replaceState({}, "", "/feed.html");
+      }
+      if(shell?.setSearchValue){
+        shell.setSearchValue("");
+      }
+      loadFeed();
+      return;
+    }
+
+    SEARCH_STATE.active = true;
+    SEARCH_STATE.query = trimmed;
+    SEARCH_STATE.loading = true;
+    SEARCH_STATE.error = "";
+    if(shell?.setSearchValue){
+      shell.setSearchValue(trimmed);
+    }
+    if(pushHistory){
+      const url = `/feed.html?q=${encodeURIComponent(trimmed)}`;
+      history.pushState({ q: trimmed }, "", url);
+    }
+
+    showFeedSkeleton();
+    updateSearchHeader(0);
+
+    try{
+      const token = getToken();
+      if(!token){
+        throw new Error("Debes iniciar sesión para buscar publicaciones.");
+      }
+      const res = await fetch(`/api/search/posts?q=${encodeURIComponent(trimmed)}`, {
+        headers: { Authorization: token }
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw new Error(data?.message || data?.error || `Error ${res.status} al buscar publicaciones`);
+      }
+      FEED_STATE.posts = [];
+      if(Array.isArray(data.items)){
+        data.items.forEach((item) => updatePostInState(item, { prepend: false }));
+      }
+      SEARCH_STATE.loading = false;
+      SEARCH_STATE.error = "";
+      renderFeed();
+    }catch(error){
+      console.error("performFeedSearch", error);
+      SEARCH_STATE.loading = false;
+      SEARCH_STATE.error = error.message || "No se pudo completar la búsqueda.";
+      FEED_STATE.posts = [];
+      renderFeed();
+    }
+  }
+
+  function handleGlobalSearch(event){
+    const query = event?.detail?.query ?? "";
+    performFeedSearch(query, { pushHistory: true });
+  }
+
+  function handleSearchPopState(){
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q") || "";
+    performFeedSearch(q, { pushHistory: false });
   }
 
   // Confirmación reutilizable (estética acorde al compositor)
@@ -789,6 +1019,9 @@
   async function loadFeed(){
     const token = localStorage.getItem("token");
     if(!token) return;
+    if(!FEED_STATE.posts.length){
+      showFeedSkeleton();
+    }
     try{
       const res = await fetch("/api/publication/feed", {
         headers: { Authorization: token }
@@ -804,6 +1037,7 @@
       renderFeed();
     }catch(error){
       console.error(error);
+      clearFeedSkeleton();
       if(feedEmpty){
         feedEmpty.hidden = false;
         const message = feedEmpty.querySelector("p");
@@ -1169,9 +1403,15 @@
 
     feedGrid = document.getElementById("feed-grid");
     feedEmpty = document.getElementById("feed-empty");
+    feedSearchHeader = document.getElementById("feed-search-header");
     storiesRail = document.getElementById("stories-rail");
     storiesAddBtn = document.querySelector(".stories__add");
     if(!feedGrid || !feedEmpty || !storiesRail) return;
+
+    const emptyTitle = feedEmpty.querySelector("h3");
+    const emptySubtitle = feedEmpty.querySelector("p");
+    FEED_EMPTY_DEFAULT.title = emptyTitle?.textContent || FEED_EMPTY_DEFAULT.title;
+    FEED_EMPTY_DEFAULT.subtitle = emptySubtitle?.textContent || FEED_EMPTY_DEFAULT.subtitle;
 
     shell.setActiveSidebar("feed");
     shell.setSearchVisibility(true);
@@ -1191,7 +1431,19 @@
 
     renderStoriesRail();
     loadStories();
-    loadFeed();
+    document.addEventListener("search:submitted", handleGlobalSearch);
+    window.addEventListener("popstate", handleSearchPopState);
+
+    const params = new URLSearchParams(window.location.search);
+    const initialQuery = (params.get("q") || "").trim();
+    if(initialQuery){
+      if(shell?.setSearchValue){
+        shell.setSearchValue(initialQuery);
+      }
+      performFeedSearch(initialQuery, { pushHistory: false });
+    }else{
+      loadFeed();
+    }
 
     if(window.postComposer){
       window.postComposer.registerListener((publication) => {

@@ -49,6 +49,19 @@ const GOOGLE_BUTTON_OPTIONS = {
   width: "100%"
 };
 
+function markAuthReady(){
+  if(!document.body) return;
+  requestAnimationFrame(() => {
+    document.body.classList.add("is-loaded");
+  });
+}
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", markAuthReady, { once: true });
+}else{
+  markAuthReady();
+}
+
 const apiBase = "";
 const endpoints = {
   login: "/api/auth/login",
