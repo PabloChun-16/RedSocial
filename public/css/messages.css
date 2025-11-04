@@ -581,6 +581,14 @@ body.app-shell.theme-day .messages-sidebar{
 body.app-shell.theme-day .conversation-header{ background:var(--messages-surface-light); }
 body.app-shell.theme-day .conversation-body{ background:linear-gradient(180deg, rgba(255,255,255,0.92), rgba(245,248,255,0.82)); }
 body.app-shell.theme-day .conversation-input{ background:var(--messages-surface-light); }
+body.app-shell.theme-day #messages-compose-text{
+  background:rgba(24,36,68,0.05);
+  border-color:rgba(24,36,68,0.12);
+  color:#1f2937;
+}
+body.app-shell.theme-day #messages-compose-text::placeholder{
+  color:rgba(24,36,68,0.42);
+}
 
 body.app-shell.theme-day .messages-thread__preview,
 body.app-shell.theme-day .messages-thread__time,

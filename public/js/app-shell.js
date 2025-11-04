@@ -4,6 +4,8 @@
   const body = document.body;
   const root = document.getElementById("app-root");
   if(!root) return;
+  let socket = null;
+  let socketScriptPromise = null;
 
   const TEMPLATE = `
     <div class="app-shell__bg"></div>
@@ -824,6 +826,7 @@
   }
 
   function handleLogout(){
+    disconnectSocket();
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem("token");
     window.location.replace("/index.html");
@@ -1040,6 +1043,76 @@
     return { fragment, meta };
   }
 
+  function loadSocketClient(){
+    if(typeof window === "undefined"){
+      return Promise.reject(new Error("window unavailable"));
+    }
+    if(typeof window.io === "function"){
+      return Promise.resolve(window.io);
+    }
+    if(socketScriptPromise){
+      return socketScriptPromise;
+    }
+    socketScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/socket.io/socket.io.js";
+      script.async = true;
+      script.onload = () => resolve(window.io);
+      script.onerror = (error) => {
+        socketScriptPromise = null;
+        reject(error);
+      };
+      document.head.appendChild(script);
+    });
+    return socketScriptPromise;
+  }
+
+  function handleSocketMessageUpdate(payload){
+    if(!payload || typeof payload !== "object") return;
+    if(typeof payload.totalUnread === "number"){
+      setMessagesUnread(payload.totalUnread, { notify: true, persist: true });
+    }
+    document.dispatchEvent(new CustomEvent("messages:socket", { detail: payload }));
+  }
+
+  async function connectSocket(){
+    if(socket || !state.user){
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if(!token){
+      return;
+    }
+    try{
+      const ioClient = await loadSocketClient();
+      if(typeof ioClient !== "function"){
+        return;
+      }
+      socket = ioClient("/", {
+        auth: { token },
+        withCredentials: true,
+        transports: ["websocket", "polling"]
+      });
+      socket.on("messages:update", handleSocketMessageUpdate);
+      socket.on("connect_error", (error) => {
+        console.warn("Socket error:", error?.message || error);
+      });
+    }catch(error){
+      console.warn("No se pudo iniciar la conexión en vivo", error?.message || error);
+    }
+  }
+
+  function disconnectSocket(){
+    if(!socket) return;
+    try{
+      socket.off("messages:update", handleSocketMessageUpdate);
+      socket.disconnect();
+    }catch(error){
+      console.warn("No se pudo cerrar la conexión en vivo", error?.message || error);
+    }
+    socket = null;
+  }
+
   function init(){
     const pageFragment = collectPageContent();
     buildShell(pageFragment);
@@ -1123,6 +1196,7 @@
     },
     setUser(user, { persist = true } = {}){
       if(!user){
+        disconnectSocket();
         state.user = null;
         if(persist){
           localStorage.removeItem(USER_KEY);
@@ -1166,6 +1240,7 @@
       if(persist){
         localStorage.setItem(USER_KEY, JSON.stringify(normalized));
       }
+      connectSocket();
       updateUserUi(normalized);
       userListeners.forEach((listener) => {
         try{

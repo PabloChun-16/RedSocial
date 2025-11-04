@@ -25,6 +25,7 @@
     "mongoose-paginate-v2": "^1.9.1",
     "mongoose-pagination": "^1.0.0",
     "multer": "^2.0.2",
+    "socket.io": "^4.8.1",
     "uuid": "^13.0.0",
     "validator": "^13.15.15"
   },

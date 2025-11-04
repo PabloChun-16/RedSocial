@@ -4,6 +4,7 @@ const Message = require("../models/message");
 const User = require("../models/user");
 const { getUnreadMessagesCount, toIdString, readUnreadCount } = require("../services/messages");
 const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
+const { emitToUser } = require("../services/socket");
 
 const DEFAULT_AVATAR = "iconobase.png";
 
@@ -52,6 +53,10 @@ const sanitizeMessage = (doc, currentUserId) => {
       ? doc.toObject({ virtuals: false })
       : { ...doc };
   const id = data._id?.toString?.() ?? data.id ?? null;
+  const conversationId =
+    data.conversation?._id?.toString?.() ??
+    data.conversation?.id ??
+    (typeof data.conversation === "string" ? data.conversation : null);
   const senderId = toIdString(data.sender?._id ?? data.sender);
   const recipientId = toIdString(data.recipient?._id ?? data.recipient);
   const readBy =
@@ -60,6 +65,7 @@ const sanitizeMessage = (doc, currentUserId) => {
     id,
     text: data.text || "",
     createdAt: data.createdAt,
+    conversationId,
     sender: sanitizeUserSummary(data.sender),
     recipient: sanitizeUserSummary(data.recipient),
     isOwn: senderId === currentUserId,
@@ -666,6 +672,7 @@ const sendMessageToUser = async (req, res) => {
       readBy: [req.user.id],
       createdAt: now
     });
+    const messageObject = message.toObject({ virtuals: false });
 
     await Conversation.updateOne(
       { _id: conversation._id },
@@ -696,7 +703,7 @@ const sendMessageToUser = async (req, res) => {
 
     const sanitizedMessage = sanitizeMessage(
       {
-        ...message.toObject(),
+        ...messageObject,
         sender: currentUser,
         recipient: targetUser
       },
@@ -704,10 +711,25 @@ const sendMessageToUser = async (req, res) => {
     );
     const decoratedMessage = await decorateMessage(sanitizedMessage);
 
-    const totalUnread = await getUnreadMessagesCount(req.user.id);
+    const [totalUnread, targetTotalUnread, updatedConversation] = await Promise.all([
+      getUnreadMessagesCount(req.user.id),
+      getUnreadMessagesCount(targetId),
+      Conversation.findById(conversation._id).select("unreadCounts").lean().exec()
+    ]);
 
     const contactSummary = sanitizeUserSummary(targetUser);
     const decoratedContact = await decorateUserSummary(contactSummary);
+    const currentSummary = sanitizeUserSummary(currentUser);
+    const decoratedCurrent = await decorateUserSummary(currentSummary);
+
+    const unreadCounts = updatedConversation?.unreadCounts || {};
+    const senderIdStr = toIdString(req.user.id);
+    const senderUnread = Number.isFinite(unreadCounts[senderIdStr])
+      ? Number(unreadCounts[senderIdStr])
+      : 0;
+    const recipientUnread = Number.isFinite(unreadCounts[targetIdStr])
+      ? Number(unreadCounts[targetIdStr])
+      : 0;
 
     const conversationPayload = {
       id: conversation._id.toString(),
@@ -720,6 +742,60 @@ const sendMessageToUser = async (req, res) => {
       }
     };
     stripImageSecrets(conversationPayload);
+
+    const senderThread = {
+      contact: decoratedContact,
+      conversationId: conversation._id.toString(),
+      preview: text,
+      lastMessageAt: now.toISOString(),
+      unread: senderUnread,
+      lastMessageSender: senderIdStr
+    };
+    stripImageSecrets(senderThread);
+
+    const recipientThread = {
+      contact: decoratedCurrent,
+      conversationId: conversation._id.toString(),
+      preview: text,
+      lastMessageAt: now.toISOString(),
+      unread: recipientUnread,
+      lastMessageSender: senderIdStr
+    };
+    stripImageSecrets(recipientThread);
+
+    const sanitizedRecipientMessage = sanitizeMessage(
+      {
+        ...messageObject,
+        sender: currentUser,
+        recipient: targetUser
+      },
+      targetIdStr
+    );
+    const decoratedRecipientMessage = await decorateMessage(sanitizedRecipientMessage);
+
+    try{
+      emitToUser(targetIdStr, "messages:update", {
+        type: "incoming",
+        conversationId: conversation._id.toString(),
+        message: decoratedRecipientMessage,
+        thread: recipientThread,
+        totalUnread: targetTotalUnread
+      });
+    }catch(socketError){
+      console.warn("messages:update emit (recipient) failed:", socketError?.message);
+    }
+
+    try{
+      emitToUser(senderIdStr, "messages:update", {
+        type: "sent",
+        conversationId: conversation._id.toString(),
+        message: decoratedMessage,
+        thread: senderThread,
+        totalUnread
+      });
+    }catch(socketError){
+      console.warn("messages:update emit (sender) failed:", socketError?.message);
+    }
 
     return res.status(201).json({
       status: "success",

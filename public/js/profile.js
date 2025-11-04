@@ -2,6 +2,7 @@
   const AVATAR_DEFAULT = "/media/iconobase.png";
   const AVATAR_FALLBACK =
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMTAwJyBoZWlnaHQ9JzEwMCcgdmlld0JveD0nMCAwIDEwMCAxMDAnIHhtbG5zPSdodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2Zyc+PGNpcmNsZSBjeD0nNTAnIGN5PSc1MCcgcj0nNDgnIGZpbGw9JyNmZmYnIGZpbGwtb3BhY2l0eT0nMC44Jy8+PHBhdGggZD0nTTE2LjkgODcuOGMuNi0zLjcgMi44LTYuOSA2LjgtNy45IDEwLjUtMi42IDQyLjEtNiA0Ni41LTEuNiAxLjcuOSA0LjQgNC43IDQuNCA3LjJWOThIMTd2LTguMnoiIGZpbGw9JyM2NDc4OUEnIG9wYWNpdHk9JzAuNScvPjxwYXRoIGQ9J00yOSAyOS4yYTE5IDE5IDAgMTE0MiAwIDE5IDE5IDAgMDEtNDIgMHonIGZpbGw9JyM3RDg4QjUnIG9wYWNpdHk9JzAuNycgLz48L3N2Zz4=";
+  const MURAL_MAX_LENGTH = 320;
 
   const DEFAULT_ADJUSTMENTS = {
     brightness: 1,
@@ -502,8 +503,9 @@
       return;
     }
     try{
+      const normalized = (text || "").slice(0, MURAL_MAX_LENGTH);
       const formData = new FormData();
-      formData.append("bio", text);
+      formData.append("bio", normalized);
       const res = await fetch("/api/user/profile", {
         method: "PUT",
         headers: { Authorization: token },
@@ -513,9 +515,12 @@
         console.warn("No se pudo guardar el mural");
         return;
       }
+      if(state.profile){
+        state.profile.bio = normalized;
+      }
       const currentUser = shell?.getUser();
       if(currentUser){
-        shell.setUser({ ...currentUser, bio: text });
+        shell.setUser({ ...currentUser, bio: normalized }, { persist: true });
       }
     }catch(error){
       console.warn("Error al guardar mural", error);
@@ -542,6 +547,10 @@
       }
       setCollection("posts", Array.isArray(ownData.items) ? ownData.items : []);
       state.collections.tagged = state.collections.tagged || [];
+      if(state.profile){
+        const stats = state.profile.stats || (state.profile.stats = {});
+        stats.posts = state.collections.posts.length;
+      }
 
       let savedItems = [];
       if(savedRes.ok){
@@ -551,7 +560,8 @@
       setCollection("saved", savedItems);
 
       if(els.postsCount){
-        els.postsCount.textContent = state.collections.posts.length.toString();
+        const totalPosts = state.collections.posts.length;
+        els.postsCount.textContent = formatNumber(totalPosts);
       }
       renderGallery(state.currentTab);
     }catch(error){

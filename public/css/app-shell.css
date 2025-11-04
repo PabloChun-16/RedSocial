@@ -223,6 +223,12 @@ body.theme-day .sidebar-link.is-open{
 
 .sidebar-create{
   position:relative;
+  width:100%;
+}
+
+.sidebar-create .sidebar-link{
+  width:100%;
+  justify-content:flex-start;
 }
 
 .create-menu{

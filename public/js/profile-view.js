@@ -211,6 +211,7 @@
       els.statsFollowing.textContent = formatNumber(profile.stats?.following ?? 0);
     }
     updateFollowButton();
+    updateMessageButton();
   }
 
   function updateFollowButton(){
@@ -234,6 +235,23 @@
       followBtn.classList.add("is-following");
     }
     followBtn.textContent = state.loadingFollow ? "Procesando..." : label;
+  }
+
+  function canSendMessage(){
+    return Boolean(state.relationship.following || state.relationship.followedBy);
+  }
+
+  function updateMessageButton(){
+    if(!els.messageBtn) return;
+    const enabled = Boolean(state.profile) && canSendMessage();
+    els.messageBtn.disabled = !enabled;
+    els.messageBtn.textContent = "Mensaje";
+    els.messageBtn.setAttribute(
+      "title",
+      enabled
+        ? "Enviar mensaje directo"
+        : "Debes seguir o ser seguido para chatear"
+    );
   }
 
   function renderPosts(){
@@ -391,6 +409,7 @@
       els.statsFollowing.textContent = formatNumber(state.profile.stats.following ?? 0);
     }
     updateFollowButton();
+    updateMessageButton();
   }
 
   async function requestFollow(action){
@@ -439,11 +458,19 @@
       els.followBtn.addEventListener("click", onFollowClick);
     }
     if(els.messageBtn){
-      els.messageBtn.setAttribute("title", "Disponible próximamente");
       els.messageBtn.addEventListener("click", () => {
-        alert("Los mensajes directos llegarán pronto ✉️");
+        if(!state.profile?.id) return;
+        if(!canSendMessage()){
+          alert("Necesitas seguir o ser seguido por esta persona para chatear.");
+          return;
+        }
+        const url = new URL("/messages.html", window.location.origin);
+        url.searchParams.set("user", state.profile.id);
+        url.searchParams.set("focus", "compose");
+        window.location.href = url.toString();
       });
     }
+    updateMessageButton();
   }
 
   async function initProfileView(appShell){

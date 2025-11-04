@@ -7,6 +7,7 @@ const { uploadBufferToS3, deleteFileFromS3 } = require("../utils/s3");
 const { resolveImageUrl, stripImageSecrets } = require("../utils/image");
 
 const DEFAULT_AVATAR = "iconobase.png";
+const BIO_MAX_LENGTH = 320;
 
 const getFollowCounts = (source = {}) => {
   const followersArray = Array.isArray(source.followers) ? source.followers : [];
@@ -69,7 +70,10 @@ const sanitizeUser = (doc, extras = {}) => {
     stats: {
       followers: followersCount,
       following: followingCount,
-      posts: obj.stats?.posts ?? obj.postsCount ?? 0
+      posts:
+        typeof extrasObj.postsCount === "number"
+          ? extrasObj.postsCount
+          : obj.stats?.posts ?? obj.postsCount ?? 0
     },
     notificationsUnread: unreadCount,
     messagesUnread:
@@ -468,8 +472,11 @@ const getProfile = async (req, res) => {
         message: "Usuario no encontrado"
       });
     }
-    const messagesUnread = await getUnreadMessagesCount(user._id);
-    const userResponse = await formatUserResponse(user, { messagesUnread });
+    const [messagesUnread, postsCount] = await Promise.all([
+      getUnreadMessagesCount(user._id),
+      Publication.countDocuments({ user: user._id }).exec()
+    ]);
+    const userResponse = await formatUserResponse(user, { messagesUnread, postsCount });
     return res.status(200).json({
       status: "success",
       user: userResponse
@@ -486,6 +493,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const desiredNickRaw = typeof req.body.nick === "string" ? req.body.nick.trim() : undefined;
+  const desiredBioRaw = typeof req.body.bio === "string" ? req.body.bio : undefined;
   const userId = req.user.id;
   let uploadedAvatarKey = null;
 
@@ -537,6 +545,11 @@ const updateProfile = async (req, res) => {
         }
         user.nick = desiredNick;
       }
+    }
+
+    if(desiredBioRaw !== undefined){
+      const normalizedBio = desiredBioRaw.trim().slice(0, BIO_MAX_LENGTH);
+      user.bio = normalizedBio;
     }
 
     if(newPassword || currentPassword){

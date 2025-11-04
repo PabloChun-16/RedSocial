@@ -13,8 +13,10 @@ for (const k of REQUIRED_ENVS) {
 // Importar dependencias
 const connection = require("./database/connection");
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const { debugAws } = require("./controllers/debugController");
+const { initSocket } = require("./services/socket");
 
 // Mensaje de bienvenida
 console.log("Bienvenido a mi red social");
@@ -22,6 +24,7 @@ console.log("Bienvenido a mi red social");
 // Crear el servidor node
 const app = express();
 const PORT = Number(process.env.PORT || 3900);
+const server = http.createServer(app);
 
 // Configurar CORS (middleware)
 const parseOrigins = (value = "") =>
@@ -50,6 +53,8 @@ app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
+
+initSocket(server, { allowedOrigins });
 
 // Rutas
 const authRoutes = require("./routes/auth");
@@ -91,7 +96,7 @@ app.get("/health", (_req, res) => res.status(200).send("OK"));
       console.warn("No se pudieron sincronizar los índices:", err?.message);
     }
 
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Servidor corriendo en el puerto ${PORT}`);
     });
   } catch (err) {

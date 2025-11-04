@@ -512,6 +512,71 @@
     });
   }
 
+  async function markConversationAsRead(conversationId){
+    if(!conversationId) return;
+    try{
+      const data = await apiFetch(`/api/messages/conversation/${conversationId}/read`, {
+        method: "POST"
+      });
+      if(typeof data?.totalUnread === "number"){
+        window.appShell?.setMessagesUnread?.(data.totalUnread, { notify: false });
+      }
+      if(state.activeContactId){
+        updateThreadSummary({
+          contactId: state.activeContactId,
+          conversationId,
+          unread: 0
+        });
+      }
+    }catch(error){
+      console.warn("No se pudo marcar la conversación como leída", error?.message || error);
+    }
+  }
+
+  function handleSocketEvent(event){
+    const payload = event?.detail;
+    if(!payload || typeof payload !== "object") return;
+    const thread = payload.thread || null;
+    const message = payload.message || null;
+    const conversationId =
+      payload.conversationId ||
+      thread?.conversationId ||
+      message?.conversationId ||
+      null;
+    if(thread){
+      updateThreadSummary({
+        contactId: thread.contact?.id,
+        contact: thread.contact,
+        conversationId: thread.conversationId || conversationId,
+        preview: thread.preview,
+        lastMessageAt: thread.lastMessageAt,
+        unread: typeof thread.unread === "number" ? thread.unread : undefined,
+        lastMessageSender: thread.lastMessageSender
+      });
+    }
+    if(!conversationId){
+      return;
+    }
+    const isCurrentConversation =
+      state.conversationId && conversationId === state.conversationId;
+    if(!isCurrentConversation || !message){
+      return;
+    }
+    const exists = state.messages.some((item) => item?.id === message.id);
+    if(!exists){
+      state.messages.push(message);
+      renderMessages(state.messages);
+      scrollConversationToBottom({ smooth: payload.type !== "incoming" });
+    }
+    if(payload.type === "incoming"){
+      const last = state.messages[state.messages.length - 1];
+      if(last){
+        last.isRead = true;
+      }
+      markConversationAsRead(conversationId);
+    }
+  }
+
   function updateThreadSummary({ contactId, contact, conversationId, preview, lastMessageAt, unread, lastMessageSender }){
     if(!contactId) return;
     const idx = state.threads.findIndex((thread) => thread.contact.id === contactId);
@@ -639,12 +704,15 @@
       state.conversationId = conversation.id;
       state.activeContactId = conversation.contact?.id || contactId || null;
       renderConversation(conversation);
+      const lastMessage = state.messages.length
+        ? state.messages[state.messages.length - 1]
+        : null;
       updateThreadSummary({
         contactId: conversation.contact?.id,
         contact: conversation.contact,
         conversationId: conversation.id,
-        preview: conversation.lastMessage?.text || state.messages.at(-1)?.text || "",
-        lastMessageAt: conversation.lastMessage?.createdAt || state.messages.at(-1)?.createdAt || new Date().toISOString(),
+        preview: conversation.lastMessage?.text || lastMessage?.text || "",
+        lastMessageAt: conversation.lastMessage?.createdAt || lastMessage?.createdAt || new Date().toISOString(),
         unread: 0,
         lastMessageSender: conversation.lastMessage?.sender
       });
@@ -773,6 +841,10 @@
     els.searchInput?.addEventListener("input", handleSearch);
     els.composeText?.addEventListener("input", autoResizeTextarea);
     els.composeForm?.addEventListener("submit", handleSend);
+    document.addEventListener("messages:socket", handleSocketEvent);
+    window.addEventListener("beforeunload", () => {
+      document.removeEventListener("messages:socket", handleSocketEvent);
+    }, { once: true });
     autoResizeTextarea();
 
     if(window.appShell?.isReady){
